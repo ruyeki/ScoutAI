@@ -1,75 +1,41 @@
-import React, { useState } from "react";
-import axios from "axios";
-import { styles } from "./styles/ChatStyles";
+import React, { useState } from 'react';
+import Navbar from './components/Navbar';
+import Dashboard from './pages/Dashboard';
+import Profile from './pages/Profile';
+import Chatbot from './pages/Chatbot';
 
-function App() {
-  const [input, setInput] = useState(""); // Stores current input text
-  const [messages, setMessages] = useState([]); // Stores chat history
-  const [isLoading, setIsLoading] = useState(false); // Tracks loading state
+import './index.css';
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!input.trim()) return;
+const App = () => {
+  const [currentPage, setCurrentPage] = useState('dashboard'); // Default page is the Dashboard
 
-    setIsLoading(true);
-    const userMessage = input;
-    setInput("");
-
-    // Add user message to chat
-    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
-
-    try {
-      const response = await axios.post("http://127.0.0.1:5001/chat", {
-        message: userMessage
-      });
-
-      // Add assistant's response to chat
-      setMessages(prev => [...prev, { role: 'assistant', content: response.data.response }]);
-    } catch (error) {
-      console.error("Error:", error);
-      setMessages(prev => [...prev, { 
-        role: 'system', 
-        content: 'Error: Could not get response from server' 
-      }]);
-    }
-
-    setIsLoading(false);
+  const handleNavigate = (page) => {
+    setCurrentPage(page);
   };
 
-  return (
-    <div className="App">
-      <h1>Chat with AI</h1>
-      
-      <div className="chat-container" style={styles.chatContainer}>
-        {messages.map((message, index) => (
-          <div 
-            key={index} 
-            style={{
-              ...styles.message,
-              ...(message.role === 'user' ? styles.userMessage : styles.assistantMessage)
-            }}
-          >
-            <strong>{message.role === 'user' ? 'You: ' : 'AI: '}</strong>
-            {message.content}
-          </div>
-        ))}
-      </div>
+  let pageContent;
+  switch (currentPage) {
+    case 'dashboard':
+      pageContent = <Dashboard />;
+      break;
+    case 'profile':
+      pageContent = <Profile />;
+      break;
+    case 'chatbot':
+      pageContent = <Chatbot />;
+      break;
+    default:
+      pageContent = <Dashboard />;
+  }
 
-      <form onSubmit={handleSubmit} style={styles.form}>
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Type your message..."
-          style={styles.input}
-          disabled={isLoading}
-        />
-        <button type="submit" disabled={isLoading} style={styles.button}>
-          {isLoading ? "Sending..." : "Send"}
-        </button>
-      </form>
+  return (
+    <div>
+      <Navbar onNavigate={handleNavigate} />
+      <div className="container mx-auto mt-8">
+        {pageContent}
+      </div>
     </div>
   );
-}
+};
 
 export default App;

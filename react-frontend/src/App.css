@@ -1,3 +1,13 @@
+@import url('https://fonts.googleapis.com/css2?family=Suez+One&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Exo:ital,wght@0,100..900;1,100..900&family=Suez+One&display=swap');
+
+body {
+  font-family: "Exo", serif;
+  margin: 0;
+  padding: 0;
+  background-color: #F1F7F8;
+}
+
 .App {
   text-align: center;
 }
@@ -32,6 +42,7 @@
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -43,8 +54,9 @@
   padding: 20px;
   height: 400px;
   overflow-y: auto;
-  border: 1px solid #ccc;
+  border: 1px solid #000000;
   border-radius: 5px;
+  background-color: white;
 }
 
 .message {
@@ -74,17 +86,17 @@
   flex: 1;
   padding: 10px;
   font-size: 16px;
-  border-radius: 5px;
+  border-radius: 20px;
   border: 1px solid #ccc;
 }
 
 .chat-button {
   padding: 10px 20px;
   font-size: 16px;
-  background-color: #007bff;
+  background-color: #789138;
   color: white;
   border: none;
-  border-radius: 5px;
+  border-radius: 20px;
   cursor: pointer;
 }
 
