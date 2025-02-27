@@ -51,19 +51,19 @@ h1 {
 
 }
 
-.navbar-center {
-  flex: 1;
+.navbar-right {
+  flex: 0.4;
   display: flex;
   justify-content: center;
 }
 
-.navbar-center a {
+.navbar-right a {
   color: #166088;
   text-decoration: none;
-  margin: 0 30px;
+  margin: 0 20px;
 }
 
-.navbar-center a:hover {
+.navbar-right a:hover {
   text-decoration: underline;
 }
 
