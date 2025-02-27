@@ -1,0 +1,125 @@
+/* Players.css */
+@import url('https://fonts.googleapis.com/css2?family=Suez+One&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Exo:ital,wght@0,100..900;1,100..900&family=Suez+One&display=swap');
+
+body {
+    font-family: "Exo", serif;
+    margin: 0;
+    padding: 0;
+    background-color: #F1F7F8;
+}
+
+h2,
+h3 {
+    color: #166088;
+}
+
+/* Layout for placing player comparison and chatbot side by side */
+.players-container {
+    display: flex;
+    /* Use Flexbox */
+    /* Full viewport height */
+    width: 100%;
+
+}
+
+/* Left: Player Comparison Section */
+.player-comparison {
+    flex: 1;
+    /* Take up 2/3 of the screen */
+    padding: 20px;
+    /* background-color: #f8f9fa; */
+    /* Light gray background */
+    /* Separator */
+    overflow-y: auto;
+    /* Enable scrolling */
+}
+
+/* Right: Chatbot Section */
+.chatbot {
+    flex: 1;
+    /* Take up 1/3 of the screen */
+    padding: 20px;
+    /* background-color: #ffffff; */
+    /* White background */
+    overflow-y: auto;
+    /* Enable scrolling */
+}
+
+select {
+    font-family: "Exo", serif;
+    border-radius: 20px;
+    border: 1.5px solid #166088;
+    padding: 10px;
+    margin-right: 20px;
+}
+
+table {
+    width: 100%;
+    /* Full width */
+    background-color: white;
+    /* Keep it clean */
+    border-collapse: separate;
+    /* Use 'separate' instead of 'collapse' for border-radius */
+    border-spacing: 0;
+    /* Remove gaps between borders */
+    border-radius: 20px;
+    /* Fully rounded corners */
+    overflow: hidden;
+    /* Ensures corners stay rounded */
+    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+/* Ensure rounded corners apply properly */
+table th:first-child {
+    border-top-left-radius: 20px;
+}
+
+table th:last-child {
+    border-top-right-radius: 20px;
+}
+
+table tr:last-child td:first-child {
+    border-bottom-left-radius: 20px;
+}
+
+table tr:last-child td:last-child {
+    border-bottom-right-radius: 20px;
+}
+
+/* Style table headers */
+th {
+    background-color: #166088;
+    /* Example: Blue header */
+    color: white;
+    padding: 10px;
+    text-align: left;
+}
+
+/* Style table cells */
+td {
+    padding: 10px;
+    border: 1px solid #ddd;
+    text-align: left;
+}
+
+/* Remove border from first row */
+thead tr th {
+    border-bottom: 2px solid #ddd;
+}
+
+/* Make sure inner borders don't break the rounded corners */
+tbody tr:last-child td {
+    border-bottom: none;
+}
+
+button {
+    font-family: "Exo", serif;
+    padding: 10px 20px;
+    font-size: 16px;
+    background-color: #166088;
+    color: white;
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+}

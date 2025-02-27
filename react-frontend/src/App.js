@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import Navbar from './components/Navbar';
-import Dashboard from './pages/Dashboard';
-import Profile from './pages/Profile';
-import Chatbot from './pages/Chatbot';
+import Players from './pages/Players';
 
 import './index.css';
 
@@ -15,17 +13,11 @@ const App = () => {
 
   let pageContent;
   switch (currentPage) {
-    case 'dashboard':
-      pageContent = <Dashboard />;
-      break;
-    case 'profile':
-      pageContent = <Profile />;
-      break;
-    case 'chatbot':
-      pageContent = <Chatbot />;
+    case 'players':
+      pageContent = <Players />;
       break;
     default:
-      pageContent = <Dashboard />;
+      pageContent = <Players />;
   }
 
   return (

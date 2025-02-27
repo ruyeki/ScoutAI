@@ -39,7 +39,7 @@ function App() {
 
     return (
         <div className="App">
-            {/* <h1>Chat with AI</h1> */}
+            {/* <h2>Chat With Us</h2> */}
 
             <div className="chat-container" style={styles.chatContainer}>
                 {messages.map((message, index) => (
