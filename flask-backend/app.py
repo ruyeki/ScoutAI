@@ -1,6 +1,6 @@
 from flask import Flask
 from flask_cors import CORS
-from chatbot_routes import chatbot_bp 
+from chatbot_routes2 import chatbot_bp 
 from player_comparison_routes import player_bp
 
 app = Flask(__name__)
