@@ -262,4 +262,3 @@ def chat():
             "error": "An error occurred while processing your request",
             "details": str(e)
         }), 500
-
