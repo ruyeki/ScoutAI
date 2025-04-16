@@ -50,9 +50,23 @@ Then you should query the schema of the most relevant tables.
 
 
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3)
-db_uri = f"mysql+mysqlconnector://{db_username}:{db_password}@{db_host}/{db_name}"
+#db_uri = f"mysql+mysqlconnector://{db_username}:{db_password}@{db_host}/{db_name}"
+#db = SQLDatabase.from_uri(db_uri)
+
+base_dir = os.path.abspath(os.path.dirname(__file__))
+db_path = os.path.join(base_dir, "ucd-basketball.db")
+db_uri = f"sqlite:///{db_path}"
+
+# Use it to initialize SQLDatabase
 db = SQLDatabase.from_uri(db_uri)
+if db: 
+    print("db connection successful from chatbot routes")
+
+
+#app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///ucd-basketball.db'
+
 table_info = db.get_table_info()
+print(table_info)
 
 
 query_prompt_template = hub.pull("langchain-ai/sql-query-system-prompt")

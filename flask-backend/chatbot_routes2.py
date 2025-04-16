@@ -16,6 +16,8 @@ from langchain_community.tools.sql_database.tool import QuerySQLDatabaseTool
 from llm_classes import State, Assistant, is_statistical_question, start_node
 from langgraph.types import Command
 from langchain.schema import AIMessage
+from sqlalchemy import create_engine, inspect
+
 
 
 
@@ -25,16 +27,42 @@ load_dotenv()
 
 # # ----- LLM and Database Setup ----- #
 
-db_username = os.getenv('DB_USERNAME') # admin
-db_password = os.getenv('DB_PASSWORD') # asabasketball
-db_name = os.getenv('DB_NAME') # game_stats
-db_host = os.getenv('DB_HOST') # ucd-basketball.cduqug2e0o83.us-east-2.rds.amazonaws.comprompt_template = hub.pull("langchain-ai/sql-agent-system-prompt")
+#db_username = os.getenv('DB_USERNAME') # admin
+#db_password = os.getenv('DB_PASSWORD') # asabasketball
+#db_name = os.getenv('DB_NAME') # game_stats
+#db_host = os.getenv('DB_HOST') # ucd-basketball.cduqug2e0o83.us-east-2.rds.amazonaws.comprompt_template = hub.pull("langchain-ai/sql-agent-system-prompt")
 
 
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3)
-db_uri = f"mysql+mysqlconnector://{db_username}:{db_password}@{db_host}/{db_name}"
+#db_uri = f"mysql+mysqlconnector://{db_username}:{db_password}@{db_host}/{db_name}"
+#db = SQLDatabase.from_uri(db_uri)
+#table_info = db.get_table_info()
+
+
+#THIS IS THE NEW SQLITE DATABASE CONNECTION CODE
+base_dir = os.path.abspath(os.path.dirname(__file__))
+db_path = os.path.join(base_dir, "ucd-basketball.db")
+db_uri = f"sqlite:///{db_path}"
 db = SQLDatabase.from_uri(db_uri)
+
+
+#THIS IS JUST TO TEST TO SEE IF SQLITE DATABASE IS CONNECTED AND WORKING
+engine = create_engine(db_uri)
+inspector = inspect(engine)
+table_names = inspector.get_table_names()
+print(table_names)
+
+if db: 
+    try: 
+        print("DB connection successful from chatbot routes 2")
+            # Try running a basic test query to make sure the DB is responsive
+        table_names = db.get_usable_table_names()
+        print("✅ DB connection successful. Tables found:", table_names)
+    except Exception as e:
+        print("❌ Failed to connect to DB:", str(e))
+
 table_info = db.get_table_info()
+print(table_info)
 
 MAX_RETRIES = 3
 
