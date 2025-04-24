@@ -157,7 +157,13 @@ class Chatbot:
         self.llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
         
         # Create database connection
-        db_uri = f"mysql+mysqlconnector://{db_username}:{db_password}@{db_host}/{db_name}"
+        #db_uri = f"mysql+mysqlconnector://{db_username}:{db_password}@{db_host}/{db_name}"
+        #self.db = SQLDatabase.from_uri(db_uri)
+
+        #NEW SQLITE DATABASE CONNECTION
+        base_dir = os.path.abspath(os.path.dirname(__file__))
+        db_path = os.path.join(base_dir, "ucd-basketball.db")
+        db_uri = f"sqlite:///{db_path}"
         self.db = SQLDatabase.from_uri(db_uri)
         
         # Set up tools

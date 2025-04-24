@@ -20,12 +20,21 @@ db_host = os.getenv('DB_HOST') # ucd-basketball.cduqug2e0o83.us-east-2.rds.amazo
 llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0.7)
 
 # Set up database connection using environment variables
-db_uri = f"mysql+mysqlconnector://admin:asabasketball@ucd-basketball.cduqug2e0o83.us-east-2.rds.amazonaws.com/game_stats"
+#db_uri = f"mysql+mysqlconnector://admin:asabasketball@ucd-basketball.cduqug2e0o83.us-east-2.rds.amazonaws.com/game_stats"
 #db_uri = f"mysql+mysqlconnector://{db_username}:{db_password}@{db_host}/{db_name}"
-db = SQLDatabase.from_uri(db_uri)
+#db = SQLDatabase.from_uri(db_uri)
 # print(db.dialect)
 # print(db.get_usable_table_names())
 # db.run("SELECT * FROM Artist LIMIT 10;")
+
+base_dir = os.path.abspath(os.path.dirname(__file__))
+db_path = os.path.join(base_dir, "ucd-basketball.db")
+db_uri = f"sqlite:///{db_path}"
+
+# Use it to initialize SQLDatabase
+db = SQLDatabase.from_uri(db_uri)
+
+
 toolkit = SQLDatabaseToolkit(db=db, llm=llm)
 tools = toolkit.get_tools()
 
