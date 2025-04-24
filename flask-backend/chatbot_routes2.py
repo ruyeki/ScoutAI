@@ -17,13 +17,17 @@ from llm_classes import State, Assistant, is_statistical_question, start_node
 from langgraph.types import Command
 from langchain.schema import AIMessage
 from sqlalchemy import create_engine, inspect
-
+from datetime import datetime
 
 
 
 chatbot_bp = Blueprint("chatbot_bp1", __name__)
 
 load_dotenv()
+
+def log_with_time(msg):
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    print(f"{msg} [Time: {now}]")
 
 # # ----- LLM and Database Setup ----- #
 
@@ -132,6 +136,7 @@ def query_decision_agent(state: dict) -> Command[Literal["generate_answer", END]
 
     structured_llm = llm.with_structured_output(QueryQuestionsOutput)
     result = structured_llm.invoke(prompt)
+    log_with_time(f"[QueryDecisionAgent] Agent generated query questions: {result}")
     return result
 
 def generate_answer(state: dict) -> Command[Literal["end"]]:
@@ -148,6 +153,7 @@ def generate_answer(state: dict) -> Command[Literal["end"]]:
     )
 
     response = llm.invoke(prompt)
+    log_with_time(f"[GenerateAnswer] LLM generated answer: {response.content}")
     return response.content
 
 def direct_answer(question: str) -> str:
@@ -156,6 +162,7 @@ def direct_answer(question: str) -> str:
     """
     prompt = f"As a UC Davis Basketball analyst, answer the following question: {question}"
     response = llm.invoke(prompt)
+    log_with_time(f"[DirectAnswer] LLM generated direct answer: {response.content}")
     return response.content
 
 # ----- Supervisor Agent ----- #
@@ -188,6 +195,7 @@ def supervisor(state: dict) -> Command[Literal["direct_answer", "db_query", END]
         next_agent = END
     else:
         next_agent = "direct_answer"
+    log_with_time(f"[Supervisor] Supervisor agent decided next step: {next_agent}")
     return Command(goto=next_agent)
 
 def overarching_supervisor(state: dict) -> dict:
@@ -197,12 +205,13 @@ def overarching_supervisor(state: dict) -> dict:
         if cmd.goto == "direct_answer":
             # Call the direct answer function
             answer = direct_answer(state["question"])
+            log_with_time(f"[OverarchingSupervisor] Direct answer generated: {answer}")
             return {"response": answer, "path": "direct"}
         elif cmd.goto == "db_query":
             # Run the query graph and extract the answer
             query_spec_output = query_decision_agent(state)
             query_questions = query_spec_output.get("questions", [])
-
+            log_with_time(f"[OverarchingSupervisor] Query questions to execute: {query_questions}")
             system_message = prompt_template.format(dialect="MySQL", top_k=5)
             agent_executor = create_react_agent(llm, tools, prompt=system_message)
 
@@ -223,7 +232,7 @@ def overarching_supervisor(state: dict) -> dict:
                         (msg.content for msg in reversed(result['messages']) if isinstance(msg, AIMessage)), 
                         None
                     )
-
+                    log_with_time(f"[OverarchingSupervisor] Agent executed query: {question} Response: {ai_message}")
                     if ai_message:
                         relevant_stats.append(ai_message)
                     
@@ -235,6 +244,7 @@ def overarching_supervisor(state: dict) -> dict:
 
             if relevant_stats:
                 answer = generate_answer(state)
+                log_with_time(f"[OverarchingSupervisor] Final answer generated from DB queries: {answer}")
                 return {
                         "response": answer,
                         "path": "db_query",
@@ -246,13 +256,15 @@ def overarching_supervisor(state: dict) -> dict:
                         }
                     }
             else:
-                    return {
+                log_with_time(f"[OverarchingSupervisor] All queries failed. Errors: {query_errors}")
+                return {
                         "response": "I encountered issues while querying the database. Please try rephrasing your question.",
                         "path": "db_query",
                         "status": "error",
                         "errors": query_errors
                     }
     except Exception as e:
+        log_with_time(f"[OverarchingSupervisor] Unexpected error: {str(e)}")
         return {
             "response": "I apologize, but I encountered an unexpected error while processing your request.",
             "path": "error",
