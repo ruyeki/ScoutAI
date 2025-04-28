@@ -1,7 +1,20 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { styles } from "../styles/ChatStyles";
 
+// TypingDots component for animated "Typing..." effect
+function TypingDots() {
+    const [dots, setDots] = useState("");
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setDots(prev => (prev.length >= 3 ? "" : prev + "."));
+        }, 500);
+        return () => clearInterval(interval);
+    }, []);
+
+    return <span>Typing{dots}</span>;
+}
 
 function App() {
     const [input, setInput] = useState(""); // Stores current input text
@@ -39,8 +52,6 @@ function App() {
 
     return (
         <div className="App">
-            {/* <h2>Chat With Us</h2> */}
-
             <div className="chat-container" style={styles.chatContainer}>
                 {messages.map((message, index) => (
                     <div
@@ -54,6 +65,18 @@ function App() {
                         {message.content}
                     </div>
                 ))}
+
+                {/* Show typing animation when loading */}
+                {isLoading && (
+                    <div style={{
+                        ...styles.message,
+                        ...styles.assistantMessage,
+                        fontStyle: 'italic',
+                        opacity: 0.7
+                    }}>
+                        <strong>AI: </strong> <TypingDots />
+                    </div>
+                )}
             </div>
 
             <form onSubmit={handleSubmit} style={styles.form}>
@@ -65,9 +88,6 @@ function App() {
                     style={styles.input}
                     disabled={isLoading}
                 />
-                {/* <button type="submit" disabled={isLoading} style={styles.button}>
-          {isLoading ? "Sending..." : "Send"}
-        </button> */}
                 <button type="submit" disabled={isLoading} style={styles.button}>
                     ↑
                 </button>

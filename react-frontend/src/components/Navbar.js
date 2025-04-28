@@ -7,7 +7,8 @@ const Navbar = ({ onNavigate }) => {
                 <h1>UC Davis Basketball | ASA</h1>
             </div>
             <div className="navbar-right">
-                <a href="#" onClick={() => onNavigate('players')}>Chatbot</a>
+                <button className="nav-link" onClick={() => onNavigate('players')}>Chatbot</button>
+                <button className="nav-link" onClick={() => onNavigate('chart')}>Chart</button>
             </div>
         </div>
     );
