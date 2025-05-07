@@ -8,7 +8,7 @@ const Navbar = ({ onNavigate }) => {
             </div>
             <div className="navbar-right">
                 <button className="nav-link" onClick={() => onNavigate('players')}>Chatbot</button>
-                <button className="nav-link" onClick={() => onNavigate('chart')}>Chart</button>
+                <button className="nav-link" onClick={() => onNavigate('radar')}>Radar</button>
             </div>
         </div>
     );
