@@ -4,6 +4,7 @@ import axios from "axios";
 function Chatbot() {
     const [input, setInput] = useState("");
     const [messages, setMessages] = useState([]);
+    const [loading, setLoading] = useState(false);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -13,6 +14,7 @@ function Chatbot() {
         setInput("");
 
         setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
+        setLoading(true);
 
         try {
             const response = await axios.post("http://127.0.0.1:5001/chat", {
@@ -32,7 +34,21 @@ function Chatbot() {
                     content: "Error: Could not get response from server",
                 },
             ]);
+        } finally {
+            setLoading(false);
         }
+    };
+
+    const TypingIndicator = () => {
+        const [dots, setDots] = useState("");
+        React.useEffect(() => {
+            if (!loading) return;
+            const interval = setInterval(() => {
+                setDots((prev) => (prev.length < 3 ? prev + "." : ""));
+            }, 500);
+            return () => clearInterval(interval);
+        }, [loading]);
+        return <span>Assistant is typing{dots}</span>;
     };
 
     return (
@@ -72,6 +88,7 @@ function Chatbot() {
                         borderRadius: "5px",
                         cursor: "pointer",
                     }}
+                    disabled={loading}
                 >
                     Send
                 </button>
@@ -113,6 +130,18 @@ function Chatbot() {
                         {message.content}
                     </div>
                 ))}
+                {loading && (
+                    <div
+                        style={{
+                            margin: "10px 0",
+                            alignSelf: "flex-start",
+                            color: "#888",
+                            fontStyle: "italic",
+                        }}
+                    >
+                        <TypingIndicator />
+                    </div>
+                )}
             </div>
         </div>
     );
