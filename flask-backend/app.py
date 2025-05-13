@@ -3,6 +3,8 @@ from flask_cors import CORS
 from chatbot_routes import chatbot_bp 
 from player_comparison_routes import player_bp
 from chart_routes import chart_bp
+from radar_chart_routes import radar_chart_bp
+
 
 
 app = Flask(__name__)
@@ -18,6 +20,8 @@ CORS(app, resources={
 app.register_blueprint(chatbot_bp)
 app.register_blueprint(player_bp)
 app.register_blueprint(chart_bp)
+app.register_blueprint(radar_chart_bp)
+
 
 
 if __name__ == "__main__":

@@ -52,6 +52,8 @@ const Navbar = ({ onNavigate }) => {
                 <img src={logo} alt="ScoutAI Logo" style={logoStyle} />
             </div>
             <div className="navbar-right">
+
+                <button className="nav-link" onClick={() => onNavigate('radar')}>Radar</button>
                 <button
                     className="nav-link"
                     style={buttonStyle}
@@ -70,6 +72,7 @@ const Navbar = ({ onNavigate }) => {
                 >
                     Chart
                 </button>
+
             </div>
         </div>
     );

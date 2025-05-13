@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import Navbar from './components/Navbar';
 import Players from './pages/Players';
-import Chart from './pages/Chart'; // ✅ Import new page
+import Chart from './pages/Chart';
+import Radar from './pages/Radar';
+
 
 import './index.css';
 
@@ -19,6 +21,9 @@ const App = () => {
       break;
     case 'chart':
       pageContent = <Chart />;
+      break;
+    case 'radar':
+      pageContent = <Radar />;
       break;
     default:
       pageContent = <Players />;
