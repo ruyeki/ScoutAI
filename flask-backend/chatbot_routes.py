@@ -90,8 +90,18 @@ class QueryQuestionsOutput(TypedDict):
 
 def query_decision_agent(state: dict) -> QueryQuestionsOutput:
     prompt = (
-        "You are a UC Davis Basketball analyst and scout..."  # trimmed for brevity
-        f"User Question:\n{state.get('question')}\n"
+        "You are a UC Davis Basketball analyst and scout. Your task is to determine which database queries will provide the most useful insights based on the user’s input. \n\n"
+        "- If the question is already a direct request for a single piece of data (for example: \"Who is the leading scorer on UC Davis?\"), just rephrase the question (if necessary).  \n"
+        "- Keep in mind, per game stats are generally more useful than season totals."
+        "- If the question is more general or exploratory (for example: \"Give me a scouting report on UC Riverside\"), break it down into multiple detailed query questions that would cover relevant trends, player statistics, and performance metrics.  \n"
+        "- The output should always be a JSON object with a list of questions. \n\n"
+        "You have access to the following table information:\n"
+        "{table_info}\n\n"
+        "Based on this, for the given user question below, decide whether to return it as-is or to break it down into multiple queries, then provide your output in the specified JSON format.\n\n"
+        "User Question:\n"
+        f"{state.get('question')}\n\n"
+        "Output format:\n"
+        "{ \"questions\": [\"<query question 1>\", \"<query question 2>\", ...] }"
     )
     structured_llm = llm.with_structured_output(QueryQuestionsOutput)
     result = structured_llm.invoke(prompt)
@@ -101,8 +111,11 @@ def query_decision_agent(state: dict) -> QueryQuestionsOutput:
 # ---- Answer Generators ----- #
 def generate_answer(state: dict) -> str:
     prompt = (
-        "You are a UC Davis Basketball analyst..."  # trimmed
-        f"Database result: {state.get('relevant_stats')}\n"
+        "You are a UC Davis Basketball analyst and scout. "
+        "Given the following question and the results of the database queries, generate a detailed and actionable insight that answers the user's question.\n\n"
+        f"Question: {state.get('question')}\n"
+        f"Database result: {state.get('relevant_stats')}\n\n"
+        "Output your answer in a clear and concise manner, and only use stats that are relevant to the question."
     )
     response = llm.invoke(prompt)
     log_with_time(f"[GenerateAnswer] LLM generated answer: {response.content}")
@@ -117,8 +130,11 @@ def direct_answer(question: str) -> str:
 # ----- Supervisor Agent ----- #
 def supervisor(state: dict) -> Command[Literal["direct_answer", "db_query", END]]:
     prompt = (
-        "You are a UC Davis Basketball analyst and scout..."  # trimmed
-        f"Question: {state.get('question')}"
+        "You are a UC Davis Basketball analyst and scout. Based on the following question, "
+        "decide whether to answer directly or to query the database for stats.\n\n"
+        f'Question: {state.get("question")}\n'
+        "If the question is about a comparison, stats, or trends, output \"db_query\". "
+        "Otherwise, output \"direct_answer\". If no further action is needed, output \"__end__\"."
     )
     response = llm.invoke(prompt)
     text = response.content.lower().strip()
