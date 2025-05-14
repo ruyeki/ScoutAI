@@ -18,6 +18,9 @@ from langgraph.types import Command
 from langchain.schema import AIMessage
 from sqlalchemy import create_engine, inspect
 from datetime import datetime
+from langchain.chains import ConversationChain
+from langchain.chains.conversation.memory import ConversationBufferMemory
+from langchain.chains.conversation.memory import ConversationSummaryMemory
 
 chatbot_bp = Blueprint("chatbot_bp1", __name__)
 CORS(chatbot_bp)
@@ -30,6 +33,16 @@ def log_with_time(msg):
 
 # ----- LLM and Database Setup ----- #
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3)
+#db_uri = f"mysql+mysqlconnector://{db_username}:{db_password}@{db_host}/{db_name}"
+#db = SQLDatabase.from_uri(db_uri)
+#table_info = db.get_table_info()
+
+conversation = ConversationChain(llm=llm)
+
+conversation_sum = ConversationChain(
+    llm=llm,
+    memory=ConversationBufferMemory()
+)
 
 # SQLITE Database Connection
 base_dir = os.path.abspath(os.path.dirname(__file__))
@@ -41,13 +54,16 @@ db = SQLDatabase.from_uri(db_uri)
 engine = create_engine(db_uri)
 inspector = inspect(engine)
 table_names = inspector.get_table_names()
-print(table_names)
+#print(table_names)
 
-try:
-    table_names = db.get_usable_table_names()
-    print("✅ DB connection successful. Tables found:", table_names)
-except Exception as e:
-    print("❌ Failed to connect to DB:", str(e))
+if db: 
+    try: 
+        #print("DB connection successful from chatbot routes 2")
+            # Try running a basic test query to make sure the DB is responsive
+        table_names = db.get_usable_table_names()
+        #print("✅ DB connection successful. Tables found:", table_names)
+    except Exception as e:
+        print("❌ Failed to connect to DB:", str(e))
 
 table_info = db.get_table_info()
 
@@ -68,65 +84,122 @@ class State(TypedDict):
 
 # Load system prompt for SQL agent
 prompt_template = hub.pull("langchain-ai/sql-agent-system-prompt")
+# system_message.messages[0].pretty_print()
+"""
+You are an agent designed to interact with a SQL database.
+Given an input question, create a syntactically correct {dialect} query to run, then look at the results of the query and return the answer.
+Unless the user specifies a specific number of examples they wish to obtain, always limit your query to at most {top_k} results.
+You can order the results by a relevant column to return the most interesting examples in the database.
+Never query for all the columns from a specific table, only ask for the relevant columns given the question.
+You have access to tools for interacting with the database.
+Only use the below tools. Only use the information returned by the below tools to construct your final answer.
+You MUST double check your query before executing it. If you get an error while executing a query, rewrite the query and try again.
+Only refer to players you find in the tables. If the player is not mentioned, respond with 'I don’t have data on that player.' Do not make up names.
+When referencing stats for players, avoid including any statistics or details that pertain to team performance. Focus solely on the player's individual attributes and achievements. Do not make up names or stats.
+DO NOT make any DML statements (INSERT, UPDATE, DELETE, DROP etc.) to the database.
 
-# ---- Formatting Agent ----- #
-def format_output(text: str) -> str:
-    """
-    Ask the LLM to best format the given text for clarity and presentation.
-    """
-    fmt_prompt = (
-        "You are an expert content formatter. "
-        "Please take the following answer and format it for clarity, readability, and presentation. "
-        "Use headings, bullet points, or tables as appropriate. Don't use bold (***text***) or italics (___text___) or headings (### Heading).\n\n"
-        f"Answer:\n{text}"
-    )
-    response = llm.invoke(fmt_prompt)
-    log_with_time(f"[FormatOutput] Formatted answer generated.")
-    return response.content
+To start you should ALWAYS look at the tables in the database to see what you can query.
+Do NOT skip this step.
+Then you should query the schema of the most relevant tables.
+"""
 
-# ---- Query Agent (State Graph) ----- #
+toolkit = SQLDatabaseToolkit(db=db, llm=llm)
+tools = toolkit.get_tools()
+
+
 class QueryQuestionsOutput(TypedDict):
     questions: List[str]
 
-def query_decision_agent(state: dict) -> QueryQuestionsOutput:
+
+
+def query_decision_agent(state: dict, memory: str = "")  -> QueryQuestionsOutput:
+    """
+    Given the user's question, determine which specific database queries would help answer it.
+    If the question is directly about a specific stat, output a single query.
+    If it's general, output multiple query questions.
+    
+    Expected output format:
+      { "questions": ["<SQL-like question 1>", "<SQL-like question 2>", ...] }
+    """
+
+    #breakpoint()
+
     prompt = (
-        "You are a UC Davis Basketball analyst and scout. Your task is to determine which database queries will provide the most useful insights based on the user’s input. \n\n"
-        "- If the question is already a direct request for a single piece of data (for example: \"Who is the leading scorer on UC Davis?\"), just rephrase the question (if necessary).  \n"
-        "- Keep in mind, per game stats are generally more useful than season totals."
-        "- If the question is more general or exploratory (for example: \"Give me a scouting report on UC Riverside\"), break it down into multiple detailed query questions that would cover relevant trends, player statistics, and performance metrics.  \n"
-        "- The output should always be a JSON object with a list of questions. \n\n"
-        "You have access to the following table information:\n"
+        "You are a UC Davis Basketball analyst and scout. Your task is to determine which database queries will provide the most useful insights based on the user's input.\n\n"
+        
+        "Guidelines:\n"
+        "- If the question is a direct request for a single data point (e.g., 'Who is the leading scorer on UC Davis?'), just rephrase it slightly if needed and return it as a single query.\n"
+        "- If the question is general or exploratory (e.g., 'Give me a scouting report on UC Riverside'), break it down into multiple specific query questions that cover relevant trends, stats, and performance insights.\n"
+        "- Prefer per-game stats over season totals whenever applicable.\n"
+        "- The output should always be a JSON object in the format: { \"questions\": [\"<query 1>\", \"<query 2>\", ...] }\n\n"
+
+        "Memory usage:\n"
+        "- Use the following past context to help interpret the current question.\n"
+        "- If the user's question contains vague references (e.g., 'he', 'that player', 'those guys', 'him'), resolve those references using memory.\n"
+        "- For example: if the user asks 'How many assists does he average?' and the memory says 'TY Johnson plays for UC Davis', then rephrase the question as 'How many assists does TY Johnson average?'\n"
+        "– Make sure to consider both the AI's and the human's responses, not just the AI's. Understanding the full context of the conversation is important. \n"
+        "- If there's no useful information in memory, proceed with the question as-is.\n\n"
+
+        "Table info available:\n"
         "{table_info}\n\n"
-        "Based on this, for the given user question below, decide whether to return it as-is or to break it down into multiple queries, then provide your output in the specified JSON format.\n\n"
-        "User Question:\n"
-        f"{state.get('question')}\n\n"
+
+        f"Past context (memory):\n{memory}\n\n"
+
+        "Now, given the user question below, decide whether to return it as a single query or break it into multiple useful sub-questions. Output must follow the format shown below.\n\n"
+
+        f"User Question:\n{state.get('question')}\n\n"
+
         "Output format:\n"
         "{ \"questions\": [\"<query question 1>\", \"<query question 2>\", ...] }"
     )
+
+
+
     structured_llm = llm.with_structured_output(QueryQuestionsOutput)
     result = structured_llm.invoke(prompt)
     log_with_time(f"[QueryDecisionAgent] Agent generated query questions: {result}")
     return result
 
-# ---- Answer Generators ----- #
-def generate_answer(state: dict) -> str:
+def generate_answer(state: dict, memory: str = "") -> Command[Literal["end"]]:
+    """
+    Generate the final answer to the user's question using the database query results.
+    """
     prompt = (
-        "You are a UC Davis Basketball analyst and scout. "
-        "Given the following question and the results of the database queries, generate a detailed and actionable insight that answers the user's question.\n\n"
-        f"Question: {state.get('question')}\n"
-        f"Database result: {state.get('relevant_stats')}\n\n"
-        "Output your answer in a clear and concise manner, and only use stats that are relevant to the question."
+        "You are a UC Davis Basketball analyst and scout.\n\n"
+        "Your task is to generate a detailed and actionable insight in response to the user's question, based on the database query results.\n"
+        "- Use the memory to resolve vague references (e.g., 'he', 'him', 'those players', 'compare to before').\n"
+        "- For example, if the user asks, “How many assists does he average?” and the memory indicates “he” refers to TY Johnson, rephrase and answer as if the user asked, “How many assists does TY Johnson average?”\n"
+        "- If there’s no relevant context in memory, interpret the question as a standalone.\n"
+        "– Make sure to consider both the AI's and the human's responses, not just the AI's. Understanding the full context of the conversation is important. \n"
+        "- Use only relevant stats from the database results to answer the question.\n"
+        "- The answer should be clear, detailed, and focused on the user’s intent.\n\n"
+        f"Question: {state.get('question')}\n\n"
+        f"Past context:\n{memory}\n\n"
+        f"Database result:\n{state.get('relevant_stats')}\n\n"
+        "Answer:"
     )
     response = llm.invoke(prompt)
     log_with_time(f"[GenerateAnswer] LLM generated answer: {response.content}")
     return response.content
 
-def direct_answer(question: str) -> str:
-    prompt = f"As a UC Davis Basketball analyst, answer the following question: {question}"
+
+def direct_answer(question: str, memory: str = "") -> str:
+    """
+    Generate a direct answer to the user's question without using a SQL query.
+    """
+    prompt = (
+        "You are a UC Davis Basketball analyst.\n\n"
+        "Your task is to answer questions directly, using context from previous interactions (provided as 'Past context') to clarify references. "
+        "If the user's question includes vague terms like 'that', 'those players', or refers to previous questions implicitly, resolve them using the memory.\n\n"
+        "– Make sure to consider both the AI's and the human's responses, not just the AI's. Understanding the full context of the conversation is important. \n"
+        "If the user is asking about a player's statistics (e.g., points, assists, rebounds, shooting percentage), route to `db_query` instead of answering directly — even if the player's name is only implied in the memory.\n\n"
+        "If no relevant context is found in memory, treat the question as standalone and proceed as normal.\n\n"
+        f"Past context:\n{memory}\n\n"
+        f"Current question:\n{question}"
+    )
     response = llm.invoke(prompt)
     log_with_time(f"[DirectAnswer] LLM generated direct answer: {response.content}")
     return response.content
-
 # ----- Supervisor Agent ----- #
 def supervisor(state: dict) -> Command[Literal["direct_answer", "db_query", END]]:
     prompt = (
@@ -151,15 +224,20 @@ def supervisor(state: dict) -> Command[Literal["direct_answer", "db_query", END]
 def overarching_supervisor(state: dict) -> dict:
     try:
         cmd = supervisor(state)
+
         if cmd.goto == "direct_answer":
-            raw = direct_answer(state["question"])
-            formatted = format_output(raw)
-            return {"response": formatted, "path": "direct"}
+            # Call the direct answer function
+            answer = direct_answer(state["question"], state.get("memory", ""))
+            log_with_time(f"[OverarchingSupervisor] Direct answer generated: {answer}")
+            return {"response": answer, "path": "direct"}
+        
         elif cmd.goto == "db_query":
-            query_spec = query_decision_agent(state)
-            queries = query_spec.get("questions", [])
-            system_msg = prompt_template.format(dialect="MySQL", top_k=5)
-            agent = create_react_agent(llm, tools, prompt=system_msg)
+            # Run the query graph and extract the answer
+            query_spec_output = query_decision_agent(state, state.get("memory", ""))
+            query_questions = query_spec_output.get("questions", [])
+            log_with_time(f"[OverarchingSupervisor] Query questions to execute: {query_questions}")
+            system_message = prompt_template.format(dialect="MySQL", top_k=5)
+            agent_executor = create_react_agent(llm, tools, prompt=system_message)
 
             stats, errors = [], []
             for q in queries:
@@ -192,7 +270,19 @@ def chat():
     try:
         data = request.json
         user_message = data.get("message")
-        state: State = {"question": user_message, "relevant_stats": "", "result": "", "answer": ""}
+
+        _ = conversation_sum.predict(input=user_message)  # To update memory/summarization
+        print(_)
+        memory = conversation_sum.memory.buffer
+        print(memory)
+
+        # Initialize state
+        state: dict = {
+            "question": user_message,
+            "memory": memory
+        }
+        
+        #call overarching agent
         result = overarching_supervisor(state)
         result["thread_id"] = str(uuid.uuid4())
         return jsonify(result)
