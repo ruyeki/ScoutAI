@@ -302,16 +302,16 @@ def chat():
 
         memory = custom_memory.get_context()
 
-        #print(memory)
+        print(memory)
 
         state: State = {"question": user_message, "relevant_stats": "", "result": "", "answer": "", "memory": memory}
+
         result = overarching_supervisor(state)
 
         custom_memory.add_ai_message(result["response"])
 
-        final_answer = result["response"]
-
         answer = result["response"] if "response" in result else ""
+        
         # Use your agent function here:
         relevant_teams = relevant_team_extraction_agent({"question": user_message})
         return jsonify({
