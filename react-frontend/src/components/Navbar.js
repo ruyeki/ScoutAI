@@ -13,20 +13,6 @@ const Navbar = ({ onNavigate }) => {
         borderBottom: '2px solid #dcdcdc'
     };
 
-    const buttonStyle = {
-        backgroundColor: '#4b0082', // Purple button background
-        color: 'white',
-        border: 'none',
-        padding: '8px 16px',
-        margin: '0 5px',
-        borderRadius: '4px',
-        cursor: 'pointer',
-    };
-
-    const buttonHoverStyle = {
-        backgroundColor: '#ff0000', // Red button background on hover
-    };
-
     const logoStyle = {
         height: '60px', 
         marginLeft: '10px', // Add spacing between text and logo
@@ -52,27 +38,7 @@ const Navbar = ({ onNavigate }) => {
                 <img src={logo} alt="ScoutAI Logo" style={logoStyle} />
             </div>
             <div className="navbar-right">
-
-                <button className="nav-link" onClick={() => onNavigate('radar')}>Radar</button>
-                <button
-                    className="nav-link"
-                    style={buttonStyle}
-                    onMouseOver={(e) => e.currentTarget.style.backgroundColor = buttonHoverStyle.backgroundColor}
-                    onMouseOut={(e) => e.currentTarget.style.backgroundColor = buttonStyle.backgroundColor}
-                    onClick={() => onNavigate('players')}
-                >
-                    Chatbot
-                </button>
-                <button
-                    className="nav-link"
-                    style={buttonStyle}
-                    onMouseOver={(e) => e.currentTarget.style.backgroundColor = buttonHoverStyle.backgroundColor}
-                    onMouseOut={(e) => e.currentTarget.style.backgroundColor = buttonStyle.backgroundColor}
-                    onClick={() => onNavigate('chart')}
-                >
-                    Chart
-                </button>
-
+                {/* No navigation buttons */}
             </div>
         </div>
     );
