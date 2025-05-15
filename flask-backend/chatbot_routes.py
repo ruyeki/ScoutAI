@@ -1,4 +1,4 @@
-import os
+import os, json
 from typing import Annotated, TypedDict, Literal, List
 from dotenv import load_dotenv
 from langchain import hub
@@ -111,6 +111,33 @@ class State(TypedDict, total=False):
 
 # Load system prompt for SQL agent
 prompt_template = hub.pull("langchain-ai/sql-agent-system-prompt")
+
+# ----- Relevant Team Extraction Agent ----- #
+def relevant_team_extraction_agent(state: dict) -> str:
+    TEAM_LIST = [
+        "UCDavis", "CalPolySLO", "CalStateBakersfield", "CalStateFullerton",
+        "CalStateNorthridge", "LongBeachState", "UCIrvine", "UCRiverside",
+        "UCSanDiego", "UCSantaBarbara", "UniversityOfHawaii", "Conference Average"
+    ]
+
+    prompt = (
+        "You are a UC Davis Basketball analyst and scout. "
+        "Given the following question, extract the relevant team name(s) from the question."
+        "If no team is mentioned, assume the user is asking about UC Davis."
+        "If only one team is mentioned, assume the other team is the conference average or UC Davis."
+        f"Teams: {', '.join(TEAM_LIST)}\n\n"
+        f"Question: {state.get('question')}\n\n"
+        "Output format: [\"TEAM1\", \"TEAM2\"]"
+    )
+
+    response = llm.invoke(prompt)
+    try:
+        teams = json.loads(response.content)
+        if isinstance(teams, list) and len(teams) == 2:
+            return teams
+    except Exception:
+        pass
+    return ["UCDavis", "Conference Average"]
 
 # ---- Formatting Agent ----- #
 def format_output(text: str) -> str:
@@ -284,7 +311,16 @@ def chat():
 
         final_answer = result["response"]
 
-        result["thread_id"] = str(uuid.uuid4())
-        return jsonify(result)
+        answer = result["response"] if "response" in result else ""
+        # Use your agent function here:
+        relevant_teams = relevant_team_extraction_agent({"question": user_message})
+        return jsonify({
+            "response": answer,
+            "relevant_teams": relevant_teams,
+            "thread_id": str(uuid.uuid4())
+        })
     except Exception as e:
-        return jsonify({"error": "An error occurred while processing your request", "details": str(e)}), 500
+        return jsonify({
+            "error": "An error occurred while processing your request",
+            "details": str(e)
+        }), 500
