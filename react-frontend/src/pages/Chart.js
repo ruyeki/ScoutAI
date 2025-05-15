@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+
 import {
     ScatterChart,
     Scatter,
@@ -6,7 +7,8 @@ import {
     YAxis,
     CartesianGrid,
     Tooltip,
-    ResponsiveContainer
+    ResponsiveContainer,
+    Label
 } from 'recharts';
 
 const API_URL = "http://localhost:5001";
@@ -48,6 +50,7 @@ const CustomTooltip = ({ active, payload }) => {
 };
 
 const Chart = () => {
+
     const [data, setData] = useState([]);
 
     useEffect(() => {
@@ -84,5 +87,7 @@ const Chart = () => {
         </div>
     );
 };
+
+const Chart = PlayerEfficiencyChart;
 
 export default Chart;
