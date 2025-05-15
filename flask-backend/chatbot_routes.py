@@ -1,4 +1,4 @@
-import os
+import os, json
 from typing import Annotated, TypedDict, Literal, List
 from dotenv import load_dotenv
 from langchain import hub
@@ -69,6 +69,33 @@ class State(TypedDict):
 # Load system prompt for SQL agent
 prompt_template = hub.pull("langchain-ai/sql-agent-system-prompt")
 
+# ----- Relevant Team Extraction Agent ----- #
+def relevant_team_extraction_agent(state: dict) -> str:
+    TEAM_LIST = [
+        "UCDavis", "CalPolySLO", "CalStateBakersfield", "CalStateFullerton",
+        "CalStateNorthridge", "LongBeachState", "UCIrvine", "UCRiverside",
+        "UCSanDiego", "UCSantaBarbara", "UniversityOfHawaii", "Conference Average"
+    ]
+
+    prompt = (
+        "You are a UC Davis Basketball analyst and scout. "
+        "Given the following question, extract the relevant team name(s) from the question."
+        "If no team is mentioned, assume the user is asking about UC Davis."
+        "If only one team is mentioned, assume the other team is the conference average or UC Davis."
+        f"Teams: {', '.join(TEAM_LIST)}\n\n"
+        f"Question: {state.get('question')}\n\n"
+        "Output format: [\"TEAM1\", \"TEAM2\"]"
+    )
+
+    response = llm.invoke(prompt)
+    try:
+        teams = json.loads(response.content)
+        if isinstance(teams, list) and len(teams) == 2:
+            return teams
+    except Exception:
+        pass
+    return ["UCDavis", "Conference Average"]
+
 # ---- Formatting Agent ----- #
 def format_output(text: str) -> str:
     """
@@ -90,7 +117,7 @@ class QueryQuestionsOutput(TypedDict):
 
 def query_decision_agent(state: dict) -> QueryQuestionsOutput:
     prompt = (
-        "You are a UC Davis Basketball analyst and scout. Your task is to determine which database queries will provide the most useful insights based on the user’s input. \n\n"
+        "You are a UC Davis Basketball analyst and scout. Your task is to determine which database queries will provide the most useful insights based on the user's input. \n\n"
         "- If the question is already a direct request for a single piece of data (for example: \"Who is the leading scorer on UC Davis?\"), just rephrase the question (if necessary).  \n"
         "- Keep in mind, per game stats are generally more useful than season totals."
         "- If the question is more general or exploratory (for example: \"Give me a scouting report on UC Riverside\"), break it down into multiple detailed query questions that would cover relevant trends, player statistics, and performance metrics.  \n"
@@ -192,9 +219,18 @@ def chat():
     try:
         data = request.json
         user_message = data.get("message")
-        state: State = {"question": user_message, "relevant_stats": "", "result": "", "answer": ""}
+        state = {"question": user_message, "relevant_stats": "", "result": "", "answer": ""}
         result = overarching_supervisor(state)
-        result["thread_id"] = str(uuid.uuid4())
-        return jsonify(result)
+        answer = result["response"] if "response" in result else ""
+        # Use your agent function here:
+        relevant_teams = relevant_team_extraction_agent({"question": user_message})
+        return jsonify({
+            "response": answer,
+            "relevant_teams": relevant_teams,
+            "thread_id": str(uuid.uuid4())
+        })
     except Exception as e:
-        return jsonify({"error": "An error occurred while processing your request", "details": str(e)}), 500
+        return jsonify({
+            "error": "An error occurred while processing your request",
+            "details": str(e)
+        }), 500
