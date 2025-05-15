@@ -49,8 +49,7 @@ const CustomTooltip = ({ active, payload }) => {
     return null;
 };
 
-const Chart = () => {
-
+export default function PlayerEfficiencyChart() {
     const [data, setData] = useState([]);
 
     useEffect(() => {
@@ -63,7 +62,7 @@ const Chart = () => {
     return (
         <div className="p-4">
             <h2 className="text-2xl font-bold mb-4">UC Davis Player Efficiency</h2>
-            <ResponsiveContainer width="100%" height={500}>
+            <ResponsiveContainer width="100%" height={250}>
                 <ScatterChart>
                     <CartesianGrid />
                     <XAxis
@@ -86,8 +85,4 @@ const Chart = () => {
             </ResponsiveContainer>
         </div>
     );
-};
-
-const Chart = PlayerEfficiencyChart;
-
-export default Chart;
+}

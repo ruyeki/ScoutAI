@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import Chatbot from "./Chatbot";
 import RadarComparisonChart from "./Radar";
-import { PlayerEfficiencyChart } from "./Chart";
+import PlayerEfficiencyChart from "./Chart";
+import { Typewriter } from "react-simple-typewriter";
 import "../Players.css";
 
 const API_URL = "http://localhost:5001";

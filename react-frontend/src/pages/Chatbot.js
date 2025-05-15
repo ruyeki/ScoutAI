@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
 
@@ -6,6 +6,14 @@ function Chatbot({ onRelevantTeams }) {
     const [input, setInput] = useState("");
     const [messages, setMessages] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [isUserTyping, setIsUserTyping] = useState(false);
+    const chatEndRef = useRef(null);
+
+    useEffect(() => {
+        if (chatEndRef.current) {
+            chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+        }
+    }, [messages, loading]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -16,6 +24,7 @@ function Chatbot({ onRelevantTeams }) {
 
         setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
         setLoading(true);
+        setIsUserTyping(false);
 
         try {
             const response = await axios.post("http://127.0.0.1:5001/chat", {
@@ -31,6 +40,7 @@ function Chatbot({ onRelevantTeams }) {
                 ...prev,
                 { role: "assistant", content: response.data.response },
             ]);
+            setIsUserTyping(false);
         } catch (error) {
             console.error("Error:", error);
             setMessages((prev) => [
@@ -40,6 +50,7 @@ function Chatbot({ onRelevantTeams }) {
                     content: "Error: Could not get response from server",
                 },
             ]);
+            setIsUserTyping(false);
         } finally {
             setLoading(false);
         }
@@ -74,6 +85,35 @@ function Chatbot({ onRelevantTeams }) {
         }
     }
 
+    // Custom typing animation for markdown
+    function TypingMarkdown({ text, speed = 50, onDone, scrollRef }) {
+        const [displayed, setDisplayed] = React.useState("");
+
+        React.useEffect(() => {
+            setDisplayed(""); // Reset when text changes
+            if (!text) return;
+            let i = 0;
+            const interval = setInterval(() => {
+                i++;
+                setDisplayed(text.slice(0, i));
+                if (i >= text.length) {
+                    clearInterval(interval);
+                    if (onDone) onDone();
+                }
+            }, speed);
+            return () => clearInterval(interval);
+        }, [text, speed, onDone]);
+
+        // Scroll to bottom as text is revealed
+        React.useEffect(() => {
+            if (scrollRef && scrollRef.current) {
+                scrollRef.current.scrollIntoView({ behavior: "smooth" });
+            }
+        }, [displayed, scrollRef]);
+
+        return <ReactMarkdown>{displayed}</ReactMarkdown>;
+    }
+
     return (
         <div style={{ display: "flex", flexDirection: "column-reverse", height: "100vh" }}>
             {/* Input Bar */}
@@ -89,7 +129,10 @@ function Chatbot({ onRelevantTeams }) {
                     <input
                         type="text"
                         value={input}
-                        onChange={(e) => setInput(e.target.value)}
+                        onChange={(e) => {
+                            setInput(e.target.value);
+                            setIsUserTyping(true);
+                        }}
                         placeholder="Type your message..."
                         style={{
                             flex: 1,
@@ -150,10 +193,11 @@ function Chatbot({ onRelevantTeams }) {
                                     ...(message.role === "user"
                                         ? {
                                               alignSelf: "flex-start",
-                                              backgroundColor: "#e3f2fd",
+                                              backgroundColor: "#EDE7F6",
                                               padding: "10px",
                                               borderRadius: "10px",
                                               maxWidth: "60%",
+                                              color: "#4B0082",
                                           }
                                         : {
                                               alignSelf: "flex-start",
@@ -167,7 +211,11 @@ function Chatbot({ onRelevantTeams }) {
                                     </strong>
                                 )}
                                 {message.role === "assistant" ? (
-                                    <ReactMarkdown>{message.content}</ReactMarkdown>
+                                    idx === groupedMessages.length - 1 && index === pair.length - 1 && !isUserTyping ? (
+                                        <TypingMarkdown key={message.content} text={message.content} speed={20} scrollRef={chatEndRef} />
+                                    ) : (
+                                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                                    )
                                 ) : (
                                     message.content
                                 )}
@@ -187,6 +235,7 @@ function Chatbot({ onRelevantTeams }) {
                         <TypingIndicator />
                     </div>
                 )}
+                <div ref={chatEndRef} />
             </div>
         </div>
     );
