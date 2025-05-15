@@ -21,9 +21,23 @@ function Chatbot() {
                 message: userMessage,
             });
 
+            const isImage = response.data.type === "image";
+
             setMessages((prev) => [
                 ...prev,
-                { role: "assistant", content: response.data.response },
+                {
+                    role: "assistant",
+                    content: isImage ? (
+                        <div>
+                            <p>{response.data.text}</p>
+                            <img
+                                src={`data:image/png;base64,${response.data.data}`}
+                                alt="Generated Chart"
+                                style={{ maxWidth: "100%", borderRadius: "8px", marginTop: "8px" }}
+                            />
+                        </div>
+                    ) : response.data.data,
+                },
             ]);
         } catch (error) {
             console.error("Error:", error);
@@ -110,16 +124,16 @@ function Chatbot() {
                             margin: "10px 0",
                             ...(message.role === "user"
                                 ? {
-                                      alignSelf: "flex-start",
-                                      backgroundColor: "#e3f2fd",
-                                      padding: "10px",
-                                      borderRadius: "10px",
-                                      maxWidth: "60%",
-                                  }
+                                    alignSelf: "flex-start",
+                                    backgroundColor: "#e3f2fd",
+                                    padding: "10px",
+                                    borderRadius: "10px",
+                                    maxWidth: "60%",
+                                }
                                 : {
-                                      alignSelf: "flex-start",
-                                      color: "#333",
-                                  }),
+                                    alignSelf: "flex-start",
+                                    color: "#333",
+                                }),
                         }}
                     >
                         {message.role === "user" && (

@@ -10,6 +10,13 @@ from langgraph.graph import START, StateGraph
 from langchain_community.agent_toolkits import SQLDatabaseToolkit
 from langgraph.prebuilt import create_react_agent
 
+from langchain.tools import tool
+import matplotlib.pyplot as plt
+import pandas as pd
+import sqlite3
+import io
+import base64
+
 load_dotenv()
 
 db_username = os.getenv('DB_USERNAME') # admin
@@ -47,7 +54,6 @@ class State(TypedDict):
 query_prompt_template = hub.pull("langchain-ai/sql-query-system-prompt")
 
 
-assert len(query_prompt_template.messages) == 1
 query_prompt_template.messages[0].pretty_print()
 
 
@@ -71,6 +77,69 @@ def write_query(state: State):
     structured_llm = llm.with_structured_output(QueryOutput, method="function_calling")
     result = structured_llm.invoke(prompt)
     return {"query": result["query"]}
+
+
+@tool
+def generate_chart(prompt: str) -> str:
+    """
+    Generate a bar or line chart based on a natural language prompt using the TeamStats database.
+    Returns the chart as a base64-encoded PNG image.
+    """
+    try:
+        print("[DEBUG] Generating chart for prompt:", prompt)
+        conn = sqlite3.connect("ucd-basketball.db")
+        df = pd.read_sql_query("SELECT team, TOT_GP, AVG_PTS, AVG_REBS, TOT_AST, TOT_STL, TOT_BLK FROM TeamStats", conn)
+        conn.close()
+
+        chart_type = "line" if "line" in prompt.lower() else "bar"
+
+        if "points" in prompt.lower():
+            x = df["team"]
+            y = df["AVG_PTS"]
+            ylabel = "Average Points"
+        elif "rebounds" in prompt.lower():
+            x = df["team"]
+            y = df["AVG_REBS"]
+            ylabel = "Average Rebounds"
+        elif "assists" in prompt.lower():
+            x = df["team"]
+            y = df["TOT_AST"] / df["TOT_GP"]
+            ylabel = "Assists per Game"
+        elif "steals" in prompt.lower():
+            x = df["team"]
+            y = df["TOT_STL"] / df["TOT_GP"]
+            ylabel = "Steals per Game"
+        elif "blocks" in prompt.lower():
+            x = df["team"]
+            y = df["TOT_BLK"] / df["TOT_GP"]
+            ylabel = "Blocks per Game"
+        else:
+            x = df["team"]
+            y = df["AVG_PTS"]
+            ylabel = "Average Points"
+
+        plt.figure(figsize=(10, 6))
+        if chart_type == "bar":
+            plt.bar(x, y)
+        elif chart_type == "line":
+            plt.plot(x, y, marker='o')
+
+        plt.title(prompt)
+        plt.ylabel(ylabel)
+        plt.xticks(rotation=45, ha='right')
+        plt.tight_layout()
+
+        buf = io.BytesIO()
+        plt.savefig(buf, format="png")
+        plt.close()
+        buf.seek(0)
+        return base64.b64encode(buf.read()).decode("utf-8")
+
+    except Exception as e:
+        print("[ERROR] Chart generation failed:", str(e))
+        return f"Error generating chart: {str(e)}"
+
+
 
 # print(write_query({"question": "How many Employees are there?"}))
 
