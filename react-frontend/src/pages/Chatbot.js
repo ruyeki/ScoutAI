@@ -31,7 +31,6 @@ function Chatbot({ onRelevantTeams }) {
                 message: userMessage,
             });
 
-            const isImage = response.data.type === "image";
             // Pass relevant_teams up if available
             if (onRelevantTeams && response.data.relevant_teams) {
                 onRelevantTeams(response.data.relevant_teams);
@@ -39,19 +38,7 @@ function Chatbot({ onRelevantTeams }) {
 
             setMessages((prev) => [
                 ...prev,
-                {
-                    role: "assistant",
-                    content: isImage ? (
-                        <div>
-                            <p>{response.data.text}</p>
-                            <img
-                                src={`data:image/png;base64,${response.data.data}`}
-                                alt="Generated Chart"
-                                style={{ maxWidth: "100%", borderRadius: "8px", marginTop: "8px" }}
-                            />
-                        </div>
-                    ) : response.data.data,
-                },
+                { role: "assistant", content: response.data.response },
             ]);
             setIsUserTyping(false);
         } catch (error) {
