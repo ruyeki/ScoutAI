@@ -6,18 +6,15 @@ from flask import request, jsonify, Blueprint
 from flask_cors import CORS
 import uuid
 from langchain_openai import ChatOpenAI
-# from llm_tools import db, tools, llm, query_prompt_template
 from langgraph.prebuilt import create_react_agent
-from llm import Chatbot
 from langgraph.graph import START, StateGraph, MessagesState, END
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
 from langchain_community.tools.sql_database.tool import QuerySQLDatabaseTool
-from llm_classes import State, Assistant, is_statistical_question, start_node
-from langgraph.types import Command
 from langchain.schema import AIMessage
 from sqlalchemy import create_engine, inspect
 from datetime import datetime
+from llm_tools import tools, generate_chart
 from langchain.chains import ConversationChain
 from langchain.chains.conversation.memory import ConversationBufferMemory
 from langchain.chains.conversation.memory import ConversationSummaryMemory
@@ -32,11 +29,6 @@ CORS(chatbot_bp)
 
 load_dotenv()
 
-def log_with_time(msg):
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    print(f"{msg} [Time: {now}]")
-
-# ----- LLM and Database Setup ----- #
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3)
 
 
@@ -56,28 +48,19 @@ db_path = os.path.join(base_dir, "ucd-basketball.db")
 db_uri = f"sqlite:///{db_path}"
 db = SQLDatabase.from_uri(db_uri)
 
-# Test DB connection
 engine = create_engine(db_uri)
 inspector = inspect(engine)
+
 table_names = inspector.get_table_names()
 #print(table_names)
 
-
-
-
 try:
-    table_names = db.get_usable_table_names()
-    print("✅ DB connection successful. Tables found:", table_names)
+    print("✅ DB connection successful. Tables found:", db.get_usable_table_names())
 except Exception as e:
     print("❌ Failed to connect to DB:", str(e))
 
 table_info = db.get_table_info()
-
-# SQL Toolkit
-toolkit = SQLDatabaseToolkit(db=db, llm=llm)
-tools = toolkit.get_tools()
-
-MAX_RETRIES = 3
+prompt_template = hub.pull("langchain-ai/sql-agent-system-prompt")
 
 
 #Create a custom memory buffer since Langchain Memory class doesnt work well
@@ -99,9 +82,10 @@ custom_memory = customMemory()
 
 class State(TypedDict, total=False):
     question: str
-    query: str
+    relevant_stats: str
     result: str
     answer: str
+    chart: str
     retry: bool
     retry_count: int
     error: str
@@ -154,9 +138,9 @@ def format_output(text: str) -> str:
     log_with_time(f"[FormatOutput] Formatted answer generated.")
     return response.content
 
-# ---- Query Agent (State Graph) ----- #
-class QueryQuestionsOutput(TypedDict):
-    questions: List[str]
+def is_chart_request(question: str) -> bool:
+    keywords = ["chart", "graph", "plot", "bar", "line", "visualize", "draw"]
+    return any(kw in question.lower() for kw in keywords)
 
 def query_decision_agent(state: dict, memory: str = "") -> QueryQuestionsOutput:
     prompt = (
@@ -233,29 +217,17 @@ def direct_answer(question: str, memory: str = "") -> str:
     log_with_time(f"[DirectAnswer] LLM generated direct answer: {response.content}")
     return response.content
 
-# ----- Supervisor Agent ----- #
-def supervisor(state: dict) -> Command[Literal["direct_answer", "db_query", END]]:
-    prompt = (
-        "You are a UC Davis Basketball analyst and scout. Based on the following question, "
-        "decide whether to answer directly or to query the database for stats.\n\n"
-        f'Question: {state.get("question")}\n'
-        "If the question is about a comparison, stats, or trends, output \"db_query\". "
-        "Otherwise, output \"direct_answer\". If no further action is needed, output \"__end__\"."
-    )
-    response = llm.invoke(prompt)
-    text = response.content.lower().strip()
-    if "db_query" in text:
-        next_agent = "db_query"
-    elif "__end__" in text:
-        next_agent = END
-    else:
-        next_agent = "direct_answer"
-    log_with_time(f"[Supervisor] Next step: {next_agent}")
-    return Command(goto=next_agent)
-
-# ----- Overarching Supervisor ----- #
 def overarching_supervisor(state: dict) -> dict:
     try:
+        if is_chart_request(state["question"]):
+            chart_b64 = generate_chart.invoke(state["question"])
+            return {
+                "type": "image",
+                "text": "Here is your chart:",
+                "data": chart_b64,
+                "path": "chart"
+            }
+
         cmd = supervisor(state)
         if cmd.goto == "direct_answer":
             raw = direct_answer(state["question"], state["memory"])
@@ -266,35 +238,23 @@ def overarching_supervisor(state: dict) -> dict:
             queries = query_spec.get("questions", [])
             system_msg = prompt_template.format(dialect="MySQL", top_k=5)
             agent = create_react_agent(llm, tools, prompt=system_msg)
-
-            stats, errors = [], []
+            stats = []
             for q in queries:
                 try:
                     result = agent.invoke({"messages": [{"role": "user", "content": q}]})
                     msg = next((m.content for m in reversed(result['messages']) if isinstance(m, AIMessage)), None)
                     if msg: stats.append(msg)
-                    log_with_time(f"Executed query '{q}': {msg}")
                 except Exception as e:
-                    errors.append(f"Error querying '{q}': {str(e)}")
-
+                    print(f"Query failed: {str(e)}")
             state["relevant_stats"] = stats
-            state["query_errors"] = errors
-
-            if stats:
-                raw = generate_answer(state)
-                formatted = format_output(raw)
-                return {"response": formatted, "path": "db_query", "status": "success", "metadata": {"queries_executed": len(queries), "successful_queries": len(stats), "failed_queries": len(errors)}}
-            else:
-                log_with_time(f"All queries failed: {errors}")
-                return {"response": "I encountered issues while querying the database. Please try rephrasing your question.", "path": "db_query", "status": "error", "errors": errors}
+            return {"response": generate_answer(state), "path": "db_query"} if stats else {"response": "No useful stats found."}
     except Exception as e:
-        log_with_time(f"[OverarchingSupervisor] Unexpected error: {e}")
-        return {"response": "I apologize, but I encountered an unexpected error while processing your request.", "path": "error", "status": "error", "error": str(e)}
+        return {"response": "Unexpected error.", "error": str(e)}
 
 @chatbot_bp.route('/chat', methods=['POST', 'OPTIONS'])
 def chat():
     if request.method == "OPTIONS":
-        return jsonify({"status": "ok"}), 200
+        return jsonify({"status": "ok"})
     try:
         data = request.json
         user_message = data.get("message")
@@ -305,7 +265,6 @@ def chat():
         print(memory)
 
         state: State = {"question": user_message, "relevant_stats": "", "result": "", "answer": "", "memory": memory}
-
         result = overarching_supervisor(state)
 
         custom_memory.add_ai_message(result["response"])
