@@ -1,107 +1,131 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import Chatbot from "./Chatbot";
+import RadarComparisonChart from "./Radar";
+import PlayerEfficiencyChart from "./Chart";
+import { Typewriter } from "react-simple-typewriter";
 import "../Players.css";
+import PlayerComparison from "./PlayerComparison";
 
 const API_URL = "http://localhost:5001";
 
-const Players = () => {
-    const [players, setPlayers] = useState([]);
-    const [player1, setPlayer1] = useState("");
-    const [player2, setPlayer2] = useState("");
-    const [comparisonData, setComparisonData] = useState(null);
+const TEAMS = [
+    "UCDavis", "CalPolySLO", "CalStateBakersfield", "CalStateFullerton",
+    "CalStateNorthridge", "LongBeachState", "UCIrvine", "UCRiverside",
+    "UCSanDiego", "UCSantaBarbara", "UniversityOfHawaii", "Conference Average"
+];
 
-    useEffect(() => {
-        async function loadPlayers() {
-            try {
-                let response = await fetch(`${API_URL}/players`);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! Status: ${response.status}`);
-                }
-                let players = await response.json();
-                if (Array.isArray(players) && players.length > 0) {
-                    setPlayers(players);
-                }
-            } catch (error) {
-                console.error("Error fetching players:", error);
-            }
+const Players = () => {
+    const [selectedTeams, setSelectedTeams] = useState(["UCDavis", "Conference Average"]);
+    const [selectedTeamForEfficiency, setSelectedTeamForEfficiency] = useState("UCDavis");
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+    const dropdownRef = useRef(null);
+
+    // Handler for chatbot
+    const handleRelevantTeams = useCallback((teams) => {
+        if (Array.isArray(teams) && teams.length === 2) {
+            setSelectedTeams(teams);
+            setSelectedTeamForEfficiency(teams[0]); // Update efficiency chart with first team
         }
-        loadPlayers();
     }, []);
 
-    async function comparePlayers() {
-        if (!player1 || !player2) {
-            alert("Please select two players.");
-            return;
+    // Handler for manual selection
+    const handleTeamChange = (index, value) => {
+        setSelectedTeams((prev) => {
+            const updated = [...prev];
+            updated[index] = value;
+            return updated;
+        });
+        if (index === 0) {
+            setSelectedTeamForEfficiency(value); // Update efficiency chart when first team changes
         }
+    };
 
-        const url = `${API_URL}/compare?player1=${encodeURIComponent(player1)}&player2=${encodeURIComponent(player2)}`;
-
-        try {
-            let response = await fetch(url);
-            if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
+    // Close dropdown when clicking outside
+    React.useEffect(() => {
+        function handleClickOutside(event) {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setDropdownOpen(false);
             }
-            let data = await response.json();
-            if (!data.error) {
-                setComparisonData(data);
-            } else {
-                alert(data.error);
-            }
-        } catch (error) {
-            console.error("Error fetching player comparison:", error);
         }
-    }
+        if (dropdownOpen) {
+            document.addEventListener("mousedown", handleClickOutside);
+        } else {
+            document.removeEventListener("mousedown", handleClickOutside);
+        }
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [dropdownOpen]);
 
     return (
-        <div className="players-container">
-            {/* Left Side: Player Comparison */}
-            <div className="player-comparison">
-                <h2>Compare Players</h2>
-
-                {/* <label>Player 1: </label> */}
-                <select value={player1} onChange={(e) => setPlayer1(e.target.value)}>
-                    <option value="">-- Select --</option>
-                    {players.map((player, index) => (
-                        <option key={index} value={player}>{player}</option>
-                    ))}
-                </select>
-
-                {/* <label>Player 2: </label> */}
-                <select value={player2} onChange={(e) => setPlayer2(e.target.value)}>
-                    <option value="">-- Select --</option>
-                    {players.map((player, index) => (
-                        <option key={index} value={player}>{player}</option>
-                    ))}
-                </select>
-
-                <button onClick={comparePlayers}>Compare</button>
-
-                {comparisonData && (
-                    <div>
-                        <h3>Comparison</h3>
-                        <table border="1">
-                            <thead>
-                                <tr>
-                                    <th>Stat</th>
-                                    <th>{player1}</th>
-                                    <th>{player2}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr><td>Points Per Game (PPG)</td><td>{comparisonData.player1?.PPG ?? "N/A"}</td><td>{comparisonData.player2?.PPG ?? "N/A"}</td></tr>
-                                <tr><td>Assists Per Game (APG)</td><td>{comparisonData.player1?.APG ?? "N/A"}</td><td>{comparisonData.player2?.APG ?? "N/A"}</td></tr>
-                                <tr><td>Rebounds Per Game (RPG)</td><td>{comparisonData.player1?.RPG ?? "N/A"}</td><td>{comparisonData.player2?.RPG ?? "N/A"}</td></tr>
-                                <tr><td>Field Goal % (FG%)</td><td>{comparisonData.player1?.["FG%"] ?? "N/A"}</td><td>{comparisonData.player2?.["FG%"] ?? "N/A"}</td></tr>
-                                <tr><td>3-Point % (3P%)</td><td>{comparisonData.player1?.["3P%"] ?? "N/A"}</td><td>{comparisonData.player2?.["3P%"] ?? "N/A"}</td></tr>
-                            </tbody>
-                        </table>
+        <div className="dashboard-container" 
+            style={{ 
+                alignItems: 'flex-start',
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: '20px',
+                width: '100%',
+                margin: 0,
+                padding:0,
+                maxWidth: 'none',
+            }}
+        >
+            {/* Left Section: Radar Chart and Player Efficiency Chart */}
+            <div className="player-stats-section" style={{ flex: 1 }}>
+                <div style={{ marginTop: 0, background: '#fff', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.07)', padding: 14, marginBottom: 2, height: 340, display: 'flex', flexDirection: 'row', justifyContent: 'flex-start' }}>
+                    <div style={{ flex: 1.5, paddingRight: 5 }}>
+                        <RadarComparisonChart
+                            team1={selectedTeams[0]}
+                            team2={selectedTeams[1]}
+                            onTeamChange={handleTeamChange}
+                        />
                     </div>
-                )}
+                    <div style={{ flex: 1, borderLeft: '1px solid #eee', paddingLeft: 10 }}>
+                        <PlayerComparison />
+                    </div>
+                </div>
+                <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 4px 16px rgba(0,0,0,0.07)', padding: 12 }}>
+                    <PlayerEfficiencyChart selectedTeam={selectedTeamForEfficiency} />
+                    <div style={{ marginTop: 16 }}>
+                        <label htmlFor="efficiency-team-select" style={{ marginRight: 8, fontWeight: 500 }}>
+                            Select a Team:
+                        </label>
+                        <select
+                            id="efficiency-team-select"
+                            value={selectedTeamForEfficiency}
+                            onChange={e => setSelectedTeamForEfficiency(e.target.value)}
+                            style={{
+                                borderRadius: 8,
+                                padding: '6px 16px',
+                                fontSize: '1rem',
+                                border: '1.5px solid #4b0082',
+                                color: '#4b0082',
+                                background: 'white',
+                                fontFamily: 'inherit',
+                                outline: 'none',
+                                marginLeft: 4
+                            }}
+                        >
+                            {TEAMS.filter(team => team !== "Conference Average").map(team => (
+                                <option key={team} value={team}>{team}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
             </div>
 
-            {/* Right Side: Chatbot */}
-            <div className="chatbot">
-                <Chatbot />
+            {/* Right Section: Chatbot */}
+            <div className="chatbot-section" 
+                style={{ 
+                    flex: '0 0 600px', 
+                    minWidth: 0, 
+                    maxHeight: 700, 
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    marginLeft: 'auto'
+                }}
+            >
+                <Chatbot onRelevantTeams={handleRelevantTeams} />
             </div>
         </div>
     );

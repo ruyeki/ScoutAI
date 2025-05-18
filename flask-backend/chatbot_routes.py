@@ -1,12 +1,12 @@
-import os
-from typing import Annotated, TypedDict, Literal
+import os, json
+from typing import Annotated, TypedDict, Literal, List
 from dotenv import load_dotenv
 from langchain import hub
-from flask import request, jsonify,Blueprint
+from flask import request, jsonify, Blueprint
 from flask_cors import CORS
 import uuid
 from langchain_openai import ChatOpenAI
-#from llm_tools import db, tools, llm, query_prompt_template
+# from llm_tools import db, tools, llm, query_prompt_template
 from langgraph.prebuilt import create_react_agent
 from llm import Chatbot
 from langgraph.graph import START, StateGraph, MessagesState, END
@@ -15,277 +15,309 @@ from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
 from langchain_community.tools.sql_database.tool import QuerySQLDatabaseTool
 from llm_classes import State, Assistant, is_statistical_question, start_node
 from langgraph.types import Command
+from langchain.schema import AIMessage
+from sqlalchemy import create_engine, inspect
+from datetime import datetime
+from langchain.chains import ConversationChain
+from langchain.chains.conversation.memory import ConversationBufferMemory
+from langchain.chains.conversation.memory import ConversationSummaryMemory
+from langchain_community.memory.kg import ConversationKGMemory
+from langchain_community.graphs import NetworkxEntityGraph
+from langchain.schema import HumanMessage
+
+chatbot_bp = Blueprint("chatbot_bp1", __name__)
+CORS(chatbot_bp)
 
 
-chatbot_bp = Blueprint("chatbot_bp", __name__)
 
 load_dotenv()
 
-# # ----- LLM and Database Setup ----- #
+def log_with_time(msg):
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    print(f"{msg} [Time: {now}]")
 
-db_username = os.getenv('DB_USERNAME') # admin
-db_password = os.getenv('DB_PASSWORD') # asabasketball
-db_name = os.getenv('DB_NAME') # game_stats
-db_host = os.getenv('DB_HOST') # ucd-basketball.cduqug2e0o83.us-east-2.rds.amazonaws.comprompt_template = hub.pull("langchain-ai/sql-agent-system-prompt")
-
-
-prompt_template = hub.pull("langchain-ai/sql-agent-system-prompt")
-prompt_template.messages[0].pretty_print()
-"""
-You are an agent designed to interact with a SQL database.
-Given an input question, create a syntactically correct {dialect} query to run, then look at the results of the query and return the answer.
-Unless the user specifies a specific number of examples they wish to obtain, always limit your query to at most {top_k} results.
-You can order the results by a relevant column to return the most interesting examples in the database.
-Never query for all the columns from a specific table, only ask for the relevant columns given the question.
-You have access to tools for interacting with the database.
-Only use the below tools. Only use the information returned by the below tools to construct your final answer.
-You MUST double check your query before executing it. If you get an error while executing a query, rewrite the query and try again.
-
-DO NOT make any DML statements (INSERT, UPDATE, DELETE, DROP etc.) to the database.
-
-To start you should ALWAYS look at the tables in the database to see what you can query.
-Do NOT skip this step.
-Then you should query the schema of the most relevant tables.
-"""
-
-
+# ----- LLM and Database Setup ----- #
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3)
-db_uri = f"mysql+mysqlconnector://{db_username}:{db_password}@{db_host}/{db_name}"
+
+
+'''
+conversation = ConversationChain(llm=llm)
+memory = ConversationSummaryMemory(llm=llm)
+
+conversation_sum = ConversationChain(
+    llm=llm,
+    memory=ConversationSummaryMemory(llm=llm)
+)
+'''
+
+# SQLITE Database Connection
+db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'ucd-basketball.db'))
+db_uri = f"sqlite:///{db_path}"
 db = SQLDatabase.from_uri(db_uri)
+
+# Test DB connection
+engine = create_engine(db_uri)
+inspector = inspect(engine)
+table_names = inspector.get_table_names()
+print(table_names)
+
+
+try:
+    table_names = db.get_usable_table_names()
+    print("✅ DB connection successful. Tables found:", table_names)
+except Exception as e:
+    print("❌ Failed to connect to DB:", str(e))
+
 table_info = db.get_table_info()
 
-
-query_prompt_template = hub.pull("langchain-ai/sql-query-system-prompt")
+# SQL Toolkit
+toolkit = SQLDatabaseToolkit(db=db, llm=llm)
+tools = toolkit.get_tools()
 
 MAX_RETRIES = 3
 
-class State(TypedDict):
+
+#Create a custom memory buffer since Langchain Memory class doesnt work well
+class customMemory: 
+    def __init__(self): 
+        self.memory = []
+    
+    def add_user_message(self, message:str): 
+        self.memory.append({"actor": "human", "content": message})
+    
+    def add_ai_message(self, message:str): 
+        self.memory.append({"actor": "ai", "content": message})
+    
+    def get_context(self, limit=10) -> str: 
+        recent = self.memory[-limit:]
+        return "\n".join([f"{m['actor'].upper()}: {m['content']}" for m in recent])
+
+custom_memory = customMemory()
+
+class State(TypedDict, total=False):
     question: str
     query: str
     result: str
     answer: str
-    retry: bool  # flag indicating to retry if there's an error
-    retry_count: int   # counter for retry attempts
-    error: str 
+    retry: bool
+    retry_count: int
+    error: str
+    relevant_stats: any
+    memory: str
 
 
-class QueryOutput(TypedDict):
-    """Generated SQL query."""
+# Load system prompt for SQL agent
+prompt_template = hub.pull("langchain-ai/sql-agent-system-prompt")
 
-    query: Annotated[str, ..., "Syntactically valid SQL query."]
+# ----- Relevant Team Extraction Agent ----- #
+def relevant_team_extraction_agent(state: dict) -> str:
+    TEAM_LIST = [
+        "UCDavis", "CalPolySLO", "CalStateBakersfield", "CalStateFullerton",
+        "CalStateNorthridge", "LongBeachState", "UCIrvine", "UCRiverside",
+        "UCSanDiego", "UCSantaBarbara", "UniversityOfHawaii", "Conference Average"
+    ]
 
-
-# ---- Query Agent (State Graph) Setup ----- #
-
-def determine_relevant_stats(state: State) -> str:
-    """Determine relevant stats to query based on the user question."""
     prompt = (
-        "You are a UC Davis basketball analyst and scout. "
-        "Given the following user question, determine the relevant stats that should be queried to provide an insightful answer. "
-        "If the user question is asking for a specific stat, output that stat in a way that can be easily translated into a SQL query. "
-        "If the question is ambiguous, list a few relevant stats that would help provide a detailed response.\n\n"
-        f"Question: {state['question']}"
+        "You are a UC Davis Basketball analyst and scout. "
+        "Given the following question, extract the relevant team name(s) from the question."
+        "If no team is mentioned, assume the user is asking about UC Davis."
+        "If only one team is mentioned, assume the other team is the conference average or UC Davis."
+        f"Teams: {', '.join(TEAM_LIST)}\n\n"
+        f"Question: {state.get('question')}\n\n"
+        "Output format: [\"TEAM1\", \"TEAM2\"]"
     )
+
     response = llm.invoke(prompt)
+    try:
+        teams = json.loads(response.content)
+        if isinstance(teams, list) and len(teams) == 2:
+            return teams
+    except Exception:
+        pass
+    return ["UCDavis", "Conference Average"]
+
+# ---- Formatting Agent ----- #
+def format_output(text: str) -> str:
+    """
+    Ask the LLM to best format the given text for clarity and presentation.
+    """
+    fmt_prompt = (
+        "You are an expert content formatter. "
+        "Please take the following answer and format it for clarity, readability, and presentation. "
+        "Use headings, bullet points, or tables as appropriate. Don't use bold (***text***) or italics (___text___) or headings (### Heading).\n\n"
+        f"Answer:\n{text}"
+    )
+    response = llm.invoke(fmt_prompt)
+    log_with_time(f"[FormatOutput] Formatted answer generated.")
     return response.content
 
-def write_query(state: State):
-    """Generate SQL query to fetch information, informed by relevant stats."""
-    relevant_stats = determine_relevant_stats(state)
-    # You might log or print the relevant stats for debugging:
-    print("Relevant stats determined:", relevant_stats)
-    
-    if state["retry"] and state.get("retry_count", 0) < MAX_RETRIES:
-        state["retry_count"] += 1
-        prompt_text = (
-            "The previous SQL query resulted in the error: "
-            f"{state.get('error', 'Unknown error')}\n"
-            "Please generate an alternative SQL query that avoids this error. "
-            f"Question: {state['question']} "
-            f"and consider these relevant stats: {relevant_stats}"
-        )
-    else:
-        table_info = db.get_table_info()
-        prompt_text = query_prompt_template.invoke({
-            "dialect": db.dialect,
-            "top_k": 10,
-            "table_info": table_info,
-            "input": f"{state['question']} Relevant stats: {relevant_stats}",
-        })
-    structured_llm = llm.with_structured_output(QueryOutput)
-    result = structured_llm.invoke(prompt_text)
-    return {"query": result["query"]}
+# ---- Query Agent (State Graph) ----- #
+class QueryQuestionsOutput(TypedDict):
+    questions: List[str]
 
-def execute_query(state: State):
-    """Execute SQL query.
-    If an error is detected (e.g. missing column), set a retry flag.
-    """
-    # breakpoint()  
-
-    execute_query_tool = QuerySQLDatabaseTool(db=db)
-    result = execute_query_tool.invoke(state["query"])
-
-    if isinstance(result, str) and ("unknown column" in result.lower() or "error" in result.lower()):
-        state["retry"] = True
-        state["error"] = result
-        state["retry_count"] = state.get("retry_count", 0) + 1
-        return {"result": "", "retry": state["retry"], "retry_count": state["retry_count"], "error": state["error"]}
-    else:
-        state["retry"] = False
-        return {"result": result, "retry": state["retry"], "retry_count": state["retry_count"], "error": state["error"]}
-
-def generate_answer(state: State):
-    """Answer question using retrieved information as context."""
-    # breakpoint()
-
+def query_decision_agent(state: dict, memory: str = "") -> QueryQuestionsOutput:
     prompt = (
-        "You are a UC Davis basketball analyst and scout."
-        "Given the following user question, corresponding SQL query, "
-        "and SQL result, provide a nuanced answer to the question. "
-        "Only mention the stats in you response, do not mention the SQL query."
-        "\n\n"
-        f'Question: {state["question"]}\n'
-        f'SQL Query: {state["query"]}\n'
-        f'SQL Result: {state["result"]}'
+        "You are a UC Davis Basketball analyst and scout. Your task is to determine which database queries will provide the most useful insights based on the user's input.\n\n"
+        "Guidelines:\n"
+        "- If the question is a direct request for a single data point (e.g., 'Who is the leading scorer on UC Davis?'), just rephrase it slightly if needed and return it as a single query.\n"
+        "- If the question is general or exploratory (e.g., 'Give me a scouting report on UC Riverside'), break it down into multiple specific query questions that cover relevant trends, stats, and performance insights.\n"
+        "- For general analysis questions (like scouting reports, or who is best player), it's good to get the stats of both the team and the conference average. Also compare to UC Davis stats.\n"
+        "- All stats in the database are already per-game stats, don't ask for the average of a stat. Intsead ask for the team average.\n"
+        "- The output should always be a JSON object in the format: { \"questions\": [\"<query 1>\", \"<query 2>\", ...] }\n\n"
+        "Memory usage:\n"
+        "- Use the following past context to help interpret the current question.\n"
+        "- If the user's question contains vague references (e.g., 'he', 'that player', 'those guys', 'him'), resolve those references using memory.\n"
+        "- Treat pronouns like 'I', 'me', or 'my' as references to the human user.\n"
+        "- For example: if the user asks 'How many assists does he average?' and the memory says 'TY Johnson plays for UC Davis', then rephrase the question as 'How many assists does TY Johnson average?'\n"
+        "– Make sure to consider both the AI's and the human's responses, not just the AI's. Understanding the full context of the conversation is important. \n"
+        "- If there's no useful information in memory, proceed with the question as-is.\n\n"
+        "Database usage:\n"
+        "- If a player is not found in one table, try other relevant tables. For example, if you cannot find a certain player in UCDavis_player_stats, check other player stats tables like UCIrvine_player_stats. \n"
+        "Table info available:\n"
+        f"{table_info}\n\n"
+        f"Past context (memory):\n{memory}\n\n"
+        "Now, given the user question below, decide whether to return it as a single query or break it into multiple useful sub-questions. Output must follow the format shown below.\n\n"
+        f"User Question:\n{state.get('question')}\n\n"
+        "Output format:\n"
+        "{ \"questions\": [\"<query question 1>\", \"<query question 2>\", ...] }"
+    )
+
+    structured_llm = llm.with_structured_output(QueryQuestionsOutput)
+    result = structured_llm.invoke(prompt)
+    log_with_time(f"[QueryDecisionAgent] Agent generated query questions: {result}")
+
+    return result
+
+# ---- Answer Generators ----- #
+def generate_answer(state: dict, memory: str = "") -> str:
+    prompt = f'''
+You are a UC Davis Basketball analyst and scout.
+
+Your task is to generate a detailed and actionable insight in response to the user's question, based on the database query results.
+- Use the memory to resolve vague references (e.g., 'he', 'him', 'those players', 'compare to before').
+- For example, if the user asks, "How many assists does he average?" and the memory indicates "he" refers to TY Johnson, rephrase and answer as if the user asked, "How many assists does TY Johnson average?"
+- If there's no relevant context in memory, interpret the question as a standalone.
+– Make sure to consider both the AI's and the human's responses, not just the AI's. Understanding the full context of the conversation is important.
+- Use only relevant stats from the database results to answer the question.
+- The answer should be clear, detailed, and focused on the user's intent.
+- When answering general analysis questions (like scouting reports, or who is best player), compare to baseline averages (like the conference average) to answer the question.
+Question: {state.get('question')}
+
+Past context:
+{memory}
+
+Database result:
+{state.get('relevant_stats')}
+
+Answer:
+'''
+    response = llm.invoke(prompt)
+    log_with_time(f"[GenerateAnswer] LLM generated answer: {response}")
+    return response.content
+
+def direct_answer(question: str, memory: str = "") -> str:
+    prompt = (
+        "You are a UC Davis Basketball analyst.\n\n"
+        "Your task is to answer questions directly as a virtual scouting assistant, using context from previous interactions (provided as 'Past context') to clarify references. "
+        "If the user's question includes vague terms like 'that', 'those players', or refers to previous questions implicitly, resolve them using the memory.\n\n"
+        "– Make sure to consider both the AI's and the human's responses, not just the AI's. Understanding the full context of the conversation is important. \n"
+        "If the user is asking about a player's statistics (e.g., points, assists, rebounds, shooting percentage), route to db_query instead of answering directly — even if the player's name is only implied in the memory.\n\n"
+        "If no relevant context is found in memory, treat the question as standalone and proceed as normal.\n\n"
+        f"Past context:\n{memory}\n\n"
+        f"Current question:\n{question}"
     )
     response = llm.invoke(prompt)
-
-    if isinstance(response, str) and ("error" in response.lower() or "unknown column" in response.lower() or "modify" in response.lower()):
-        state["retry"] = True
-        state["error"] = response
-        state["retry_count"] = state.get("retry_count", 0) + 1
-        return {"answer": "", "retry": state["retry"], "retry_count": state["retry_count"], "error": state["error"]}
-    state["answer"] = response.content
-    return {"answer": response.content}
-
-def execute_checker(state: State):
-    """Determine the next node based on state conditions"""
-    if state.get("retry", False) and state.get("retry_count", 0) < MAX_RETRIES:
-        return "write_query"
-    return "generate_answer"
-
-def answer_checker(state: State):
-    """Determine the next node based on state conditions"""
-    if state.get("retry", False) and state.get("retry_count", 0) < MAX_RETRIES:
-        return "write_query"
-    return END
-
-def needs_db_query(state: State) -> bool:
-    """
-    Function to determine if a database query is needed based on keywords in user input
-    """
-    keywords = ["scorer", "points", "stat", "game", "compare", "leader"]
-    question = state["question"].lower()
-    if any(keyword in question for keyword in keywords):
-        return "write_query"
-    return "generate_answer"
-
-graph_builder = StateGraph(State)
-graph_builder.add_node("write_query", write_query)
-graph_builder.add_node("execute_query", execute_query)
-graph_builder.add_node("generate_answer", generate_answer)
-
-graph_builder.add_edge(START, "write_query")
-graph_builder.add_edge("write_query", "execute_query")
-graph_builder.add_conditional_edges("execute_query", execute_checker)
-graph_builder.add_conditional_edges("generate_answer", answer_checker)
-query_graph = graph_builder.compile()
+    log_with_time(f"[DirectAnswer] LLM generated direct answer: {response.content}")
+    return response.content
 
 # ----- Supervisor Agent ----- #
-
-
-def direct_answer(question: str) -> str:
-    """
-    Generate direct answer to user input, no sql query.
-    """
-    prompt = f"As a UC Davis Basketball analyst, answer the following question: {question}"
-    response = llm.invoke(prompt)
-    return response.content
-
 def supervisor(state: dict) -> Command[Literal["direct_answer", "db_query", END]]:
-    """
-    The supervisor examines the state (e.g., the user's messages or question)
-    and returns a Command that directs the flow to either:
-      - "direct_answer": Answer directly using the LLM,
-      - "db_query": Delegate to the DB query chain,
-      - END: End the conversation.
-    """
-
     prompt = (
         "You are a UC Davis Basketball analyst and scout. Based on the following question, "
         "decide whether to answer directly or to query the database for stats.\n\n"
         f'Question: {state.get("question")}\n'
         "If the question is about a comparison, stats, or trends, output \"db_query\". "
-        "Otherwise, output \"direct_answer\". If no further action is needed, output \"__end__\"."
+        "Otherwise, if it's a general input about non-basketball topics (like 'hi, who are you?'), output \"direct_answer\". If no further action is needed, output \"__end__\"."
     )
-
     response = llm.invoke(prompt)
-    # Assume response is parsed to a dictionary with a "next_agent" key.
-    response_text = response.content.lower().strip()
-    
-    # Determine next agent based on response content
-    if "db_query" in response_text:
+    text = response.content.lower().strip()
+    if "db_query" in text:
         next_agent = "db_query"
-    elif "__end__" in response_text:
+    elif "__end__" in text:
         next_agent = END
     else:
         next_agent = "direct_answer"
+    log_with_time(f"[Supervisor] Next step: {next_agent}")
     return Command(goto=next_agent)
 
+# ----- Overarching Supervisor ----- #
 def overarching_supervisor(state: dict) -> dict:
-    
-    cmd = supervisor(state)
-    if cmd.goto == "direct_answer":
-        # Call the direct answer function
-        answer = direct_answer(state["question"])
-        return {"response": answer, "path": "direct"}
-    elif cmd.goto == "db_query":
-        # Run the query graph and extract the answer
-        current_state = state.copy()
-        steps = []
-        for step in query_graph.stream(state):
-            steps.append(step)
-            print(step)
-            if isinstance(step, dict):
-                current_state.update(step)
-        answer = current_state.get("generate_answer", {}).get("answer", "")
-        print(current_state)
-        if not answer:
-            answer = "I'm sorry, I couldn't generate a response from the database."
-        return {"response": answer, "path": "db_query", "debug_info": {"steps": steps, "final_state": current_state}}
-    else:  # if END or other commands
-        return {"response": "Goodbye!", "path": "end"}
+    try:
+        cmd = supervisor(state)
+        if cmd.goto == "direct_answer":
+            raw = direct_answer(state["question"], state["memory"])
+            formatted = format_output(raw)
+            return {"response": formatted, "path": "direct"}
+        elif cmd.goto == "db_query":
+            query_spec = query_decision_agent(state, state["memory"])
+            queries = query_spec.get("questions", [])
+            system_msg = prompt_template.format(dialect="MySQL", top_k=5)
+            agent = create_react_agent(llm, tools, prompt=system_msg)
 
+            stats, errors = [], []
+            for q in queries:
+                try:
+                    result = agent.invoke({"messages": [{"role": "user", "content": q}]})
+                    msg = next((m.content for m in reversed(result['messages']) if isinstance(m, AIMessage)), None)
+                    if msg: stats.append(msg)
+                    log_with_time(f"Executed query '{q}': {msg}")
+                except Exception as e:
+                    errors.append(f"Error querying '{q}': {str(e)}")
+
+            state["relevant_stats"] = stats
+            state["query_errors"] = errors
+
+            if stats:
+                raw = generate_answer(state)
+                formatted = format_output(raw)
+                return {"response": formatted, "path": "db_query", "status": "success", "metadata": {"queries_executed": len(queries), "successful_queries": len(stats), "failed_queries": len(errors)}}
+            else:
+                log_with_time(f"All queries failed: {errors}")
+                return {"response": "I encountered issues while querying the database. Please try rephrasing your question.", "path": "db_query", "status": "error", "errors": errors}
+    except Exception as e:
+        log_with_time(f"[OverarchingSupervisor] Unexpected error: {e}")
+        return {"response": "I apologize, but I encountered an unexpected error while processing your request.", "path": "error", "status": "error", "error": str(e)}
 
 @chatbot_bp.route('/chat', methods=['POST', 'OPTIONS'])
 def chat():
     if request.method == "OPTIONS":
         return jsonify({"status": "ok"}), 200
-        
     try:
-        breakpoint()
-
         data = request.json
         user_message = data.get("message")
+        custom_memory.add_user_message(user_message)
 
-        state: State = { # initial state
-            "question": user_message,
-            "query": "",
-            "result": "",
-            "answer": "",
-            "retry": False,
-            "retry_count": 0,
-            "error": ""
-        }
+        memory = custom_memory.get_context()
 
-        #call overarching agent
+        print(memory)
+
+        state: State = {"question": user_message, "relevant_stats": "", "result": "", "answer": "", "memory": memory}
+
         result = overarching_supervisor(state)
-        result["thread_id"] = str(uuid.uuid4())
-        return jsonify(result)
+
+        custom_memory.add_ai_message(result["response"])
+
+        answer = result["response"] if "response" in result else ""
         
+        # Use your agent function here:
+        relevant_teams = relevant_team_extraction_agent({"question": user_message})
+        return jsonify({
+            "response": answer,
+            "relevant_teams": relevant_teams,
+            "thread_id": str(uuid.uuid4())
+        })
     except Exception as e:
         return jsonify({
             "error": "An error occurred while processing your request",
             "details": str(e)
         }), 500
-

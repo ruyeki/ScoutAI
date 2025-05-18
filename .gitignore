@@ -42,3 +42,9 @@ yarn-error.log*
 # OS Files
 .DS_Store
 
+.vscode/launch.json
+
+# cursor ignore
+.cursorignore
+
+scoutai_venv/
