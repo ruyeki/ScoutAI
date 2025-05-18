@@ -51,8 +51,7 @@ conversation_sum = ConversationChain(
 '''
 
 # SQLITE Database Connection
-base_dir = os.path.abspath(os.path.dirname(__file__))
-db_path = os.path.join(base_dir, "ucd-basketball.db")
+db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'ucd-basketball.db'))
 db_uri = f"sqlite:///{db_path}"
 db = SQLDatabase.from_uri(db_uri)
 
@@ -60,9 +59,7 @@ db = SQLDatabase.from_uri(db_uri)
 engine = create_engine(db_uri)
 inspector = inspect(engine)
 table_names = inspector.get_table_names()
-#print(table_names)
-
-
+print(table_names)
 
 
 try:
@@ -161,33 +158,26 @@ class QueryQuestionsOutput(TypedDict):
 def query_decision_agent(state: dict, memory: str = "") -> QueryQuestionsOutput:
     prompt = (
         "You are a UC Davis Basketball analyst and scout. Your task is to determine which database queries will provide the most useful insights based on the user's input.\n\n"
-        
         "Guidelines:\n"
         "- If the question is a direct request for a single data point (e.g., 'Who is the leading scorer on UC Davis?'), just rephrase it slightly if needed and return it as a single query.\n"
         "- If the question is general or exploratory (e.g., 'Give me a scouting report on UC Riverside'), break it down into multiple specific query questions that cover relevant trends, stats, and performance insights.\n"
-        "- Prefer per-game stats over season totals whenever applicable.\n"
+        "- For general analysis questions (like scouting reports, or who is best player), it's good to get the stats of both the team and the conference average. Also compare to UC Davis stats.\n"
+        "- All stats in the database are already per-game stats, don't ask for the average of a stat. Intsead ask for the team average.\n"
         "- The output should always be a JSON object in the format: { \"questions\": [\"<query 1>\", \"<query 2>\", ...] }\n\n"
-
         "Memory usage:\n"
         "- Use the following past context to help interpret the current question.\n"
         "- If the user's question contains vague references (e.g., 'he', 'that player', 'those guys', 'him'), resolve those references using memory.\n"
-        "- Treat pronouns like “I”, “me”, or “my” as references to the human user.\n"
+        "- Treat pronouns like 'I', 'me', or 'my' as references to the human user.\n"
         "- For example: if the user asks 'How many assists does he average?' and the memory says 'TY Johnson plays for UC Davis', then rephrase the question as 'How many assists does TY Johnson average?'\n"
         "– Make sure to consider both the AI's and the human's responses, not just the AI's. Understanding the full context of the conversation is important. \n"
         "- If there's no useful information in memory, proceed with the question as-is.\n\n"
-
         "Database usage:\n"
         "- If a player is not found in one table, try other relevant tables. For example, if you cannot find a certain player in UCDavis_player_stats, check other player stats tables like UCIrvine_player_stats. \n"
-
         "Table info available:\n"
-        "{table_info}\n\n"
-
+        f"{table_info}\n\n"
         f"Past context (memory):\n{memory}\n\n"
-
         "Now, given the user question below, decide whether to return it as a single query or break it into multiple useful sub-questions. Output must follow the format shown below.\n\n"
-
         f"User Question:\n{state.get('question')}\n\n"
-
         "Output format:\n"
         "{ \"questions\": [\"<query question 1>\", \"<query question 2>\", ...] }"
     )
@@ -200,20 +190,27 @@ def query_decision_agent(state: dict, memory: str = "") -> QueryQuestionsOutput:
 
 # ---- Answer Generators ----- #
 def generate_answer(state: dict, memory: str = "") -> str:
-    prompt = (
-        "You are a UC Davis Basketball analyst and scout.\n\n"
-        "Your task is to generate a detailed and actionable insight in response to the user's question, based on the database query results.\n"
-        "- Use the memory to resolve vague references (e.g., 'he', 'him', 'those players', 'compare to before').\n"
-        "- For example, if the user asks, “How many assists does he average?” and the memory indicates “he” refers to TY Johnson, rephrase and answer as if the user asked, “How many assists does TY Johnson average?”\n"
-        "- If there’s no relevant context in memory, interpret the question as a standalone.\n"
-        "– Make sure to consider both the AI's and the human's responses, not just the AI's. Understanding the full context of the conversation is important. \n"
-        "- Use only relevant stats from the database results to answer the question.\n"
-        "- The answer should be clear, detailed, and focused on the user’s intent.\n\n"
-        f"Question: {state.get('question')}\n\n"
-        f"Past context:\n{memory}\n\n"
-        f"Database result:\n{state.get('relevant_stats')}\n\n"
-        "Answer:"
-    )
+    prompt = f'''
+You are a UC Davis Basketball analyst and scout.
+
+Your task is to generate a detailed and actionable insight in response to the user's question, based on the database query results.
+- Use the memory to resolve vague references (e.g., 'he', 'him', 'those players', 'compare to before').
+- For example, if the user asks, "How many assists does he average?" and the memory indicates "he" refers to TY Johnson, rephrase and answer as if the user asked, "How many assists does TY Johnson average?"
+- If there's no relevant context in memory, interpret the question as a standalone.
+– Make sure to consider both the AI's and the human's responses, not just the AI's. Understanding the full context of the conversation is important.
+- Use only relevant stats from the database results to answer the question.
+- The answer should be clear, detailed, and focused on the user's intent.
+- When answering general analysis questions (like scouting reports, or who is best player), compare to baseline averages (like the conference average) to answer the question.
+Question: {state.get('question')}
+
+Past context:
+{memory}
+
+Database result:
+{state.get('relevant_stats')}
+
+Answer:
+'''
     response = llm.invoke(prompt)
     log_with_time(f"[GenerateAnswer] LLM generated answer: {response}")
     return response.content
@@ -221,7 +218,7 @@ def generate_answer(state: dict, memory: str = "") -> str:
 def direct_answer(question: str, memory: str = "") -> str:
     prompt = (
         "You are a UC Davis Basketball analyst.\n\n"
-        "Your task is to answer questions directly, using context from previous interactions (provided as 'Past context') to clarify references. "
+        "Your task is to answer questions directly as a virtual scouting assistant, using context from previous interactions (provided as 'Past context') to clarify references. "
         "If the user's question includes vague terms like 'that', 'those players', or refers to previous questions implicitly, resolve them using the memory.\n\n"
         "– Make sure to consider both the AI's and the human's responses, not just the AI's. Understanding the full context of the conversation is important. \n"
         "If the user is asking about a player's statistics (e.g., points, assists, rebounds, shooting percentage), route to db_query instead of answering directly — even if the player's name is only implied in the memory.\n\n"
@@ -240,7 +237,7 @@ def supervisor(state: dict) -> Command[Literal["direct_answer", "db_query", END]
         "decide whether to answer directly or to query the database for stats.\n\n"
         f'Question: {state.get("question")}\n'
         "If the question is about a comparison, stats, or trends, output \"db_query\". "
-        "Otherwise, output \"direct_answer\". If no further action is needed, output \"__end__\"."
+        "Otherwise, if it's a general input about non-basketball topics (like 'hi, who are you?'), output \"direct_answer\". If no further action is needed, output \"__end__\"."
     )
     response = llm.invoke(prompt)
     text = response.content.lower().strip()

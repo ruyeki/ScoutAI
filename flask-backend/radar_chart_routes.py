@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify
 import pandas as pd
 import sqlite3
+import os
 
 radar_chart_bp = Blueprint("radar_chart_bp", __name__)
 
@@ -15,18 +16,19 @@ def normalize_stats(row):
         "Blocks": 10
     }
     return {
-        "Points": 100 * row["AVG_PTS"] / max_values["Points"],
-        "FG%": 100 * row["FG_PCT"],
-        "3PT": 100 * (row["TOT_3PT"] / row["TOT_GP"]) / max_values["3PT"],
-        "Rebounds": 100 * row["AVG_REBS"] / max_values["Rebounds"],
-        "Assists": 100 * (row["TOT_AST"] / row["TOT_GP"]) / max_values["Assists"],
-        "Steals": 100 * (row["TOT_STL"] / row["TOT_GP"]) / max_values["Steals"],
-        "Blocks": 100 * (row["TOT_BLK"] / row["TOT_GP"]) / max_values["Blocks"],
+        "Points": 100 * row["PTS/gm"] / max_values["Points"],
+        "FG%": row["FG%"],  # Already a percentage
+        "3PT": 100 * row["3PT/gm"] / max_values["3PT"],
+        "Rebounds": 100 * row["REB/gm"] / max_values["Rebounds"],
+        "Assists": 100 * row["Assists/gm"] / max_values["Assists"],
+        "Steals": 100 * row["STL/gm"] / max_values["Steals"],
+        "Blocks": 100 * row["BLK/gm"] / max_values["Blocks"],
     }
 
 @radar_chart_bp.route('/api/radar-chart/<team_name>')
 def radar_chart(team_name):
-    conn = sqlite3.connect("ucd-basketball.db")
+    db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ucd-basketball.db"))
+    conn = sqlite3.connect(db_path)
     team_df = pd.read_sql_query("SELECT * FROM TeamStats WHERE team = ?", conn, params=(team_name,))
     conn.close()
 
@@ -38,7 +40,8 @@ def radar_chart(team_name):
 
 @radar_chart_bp.route('/api/raw-team-stats/<team_name>')
 def raw_team_stats(team_name):
-    conn = sqlite3.connect("ucd-basketball.db")
+    db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ucd-basketball.db"))
+    conn = sqlite3.connect(db_path)
     team_df = pd.read_sql_query("SELECT * FROM TeamStats WHERE team = ?", conn, params=(team_name,))
     conn.close()
 
@@ -51,7 +54,8 @@ def raw_team_stats(team_name):
 
 @radar_chart_bp.route('/api/radar-chart/conference-average')
 def radar_chart_conference_average():
-    conn = sqlite3.connect("ucd-basketball.db")
+    db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ucd-basketball.db"))
+    conn = sqlite3.connect(db_path)
     df = pd.read_sql_query("SELECT * FROM TeamStats", conn)
     conn.close()
 
@@ -68,26 +72,26 @@ def radar_chart_conference_average():
         "Blocks": 10
     }
 
-    # Calculate averages for each stat
+    # Calculate averages for each stat (no extra *100)
     avg_stats = {
-        "Points": df["AVG_PTS"].mean(),
-        "FG%": df["FG_PCT"].mean() * 100,
-        "3PT": ((df["TOT_3PT"] / df["TOT_GP"]).mean()) * 100,
-        "Rebounds": df["AVG_REBS"].mean(),
-        "Assists": ((df["TOT_AST"] / df["TOT_GP"]).mean()) * 100,
-        "Steals": ((df["TOT_STL"] / df["TOT_GP"]).mean()) * 100,
-        "Blocks": ((df["TOT_BLK"] / df["TOT_GP"]).mean()) * 100,
+        "Points": df["PTS/gm"].mean(),
+        "FG%": df["FG%"].mean(),  # Already a percentage
+        "3PT": df["3PT/gm"].mean(),
+        "Rebounds": df["REB/gm"].mean(),
+        "Assists": df["Assists/gm"].mean(),
+        "Steals": df["STL/gm"].mean(),
+        "Blocks": df["BLK/gm"].mean(),
     }
 
     # Normalize relative to max values
     normalized = {
         "Points": 100 * avg_stats["Points"] / max_values["Points"],
         "FG%": avg_stats["FG%"],  # already scaled
-        "3PT": avg_stats["3PT"] / max_values["3PT"],
+        "3PT": 100 * avg_stats["3PT"] / max_values["3PT"],
         "Rebounds": 100 * avg_stats["Rebounds"] / max_values["Rebounds"],
-        "Assists": avg_stats["Assists"] / max_values["Assists"],
-        "Steals": avg_stats["Steals"] / max_values["Steals"],
-        "Blocks": avg_stats["Blocks"] / max_values["Blocks"]
+        "Assists": 100 * avg_stats["Assists"] / max_values["Assists"],
+        "Steals": 100 * avg_stats["Steals"] / max_values["Steals"],
+        "Blocks": 100 * avg_stats["Blocks"] / max_values["Blocks"]
     }
 
     return jsonify({

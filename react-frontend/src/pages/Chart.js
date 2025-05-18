@@ -43,46 +43,60 @@ const CustomTooltip = ({ active, payload }) => {
                 )}
                 <p style={{ margin: 0 }}>MPG: {player.mpg}</p>
                 <p style={{ margin: 0 }}>PPG: {player.ppg}</p>
+                {player.fg_pct !== undefined && player.fg_pct !== null && (
+                    <p style={{ margin: 0 }}>FG%: {(player.fg_pct * 100).toFixed(1)}%</p>
+                )}
+                {player.three_pt_pct !== undefined && player.three_pt_pct !== null && (
+                    <p style={{ margin: 0 }}>3PT%: {(player.three_pt_pct * 100).toFixed(1)}%</p>
+                )}
             </div>
         );
     }
     return null;
 };
 
-export default function PlayerEfficiencyChart() {
+export default function PlayerEfficiencyChart({ selectedTeam }) {
     const [data, setData] = useState([]);
+    const [loading, setLoading] = useState(false);
 
     useEffect(() => {
-        fetch(`${API_URL}/api/player-efficiency`)
+        if (!selectedTeam) return;
+        setLoading(true);
+        fetch(`${API_URL}/api/player-efficiency/${selectedTeam}`)
             .then((res) => res.json())
             .then((json) => setData(json))
-            .catch((err) => console.error("API error:", err));
-    }, []);
+            .catch((err) => console.error("API error:", err))
+            .finally(() => setLoading(false));
+    }, [selectedTeam]);
 
     return (
         <div className="p-4">
-            <h2 className="text-2xl font-bold mb-4">UC Davis Player Efficiency</h2>
-            <ResponsiveContainer width="100%" height={250}>
-                <ScatterChart>
-                    <CartesianGrid />
-                    <XAxis
-                        type="number"
-                        dataKey="mpg"
-                        name="Minutes Per Game"
-                        stroke="#4b0082"
-                        label={{ value: 'Minutes Per Game', position: 'insideBottomRight', offset: -10 }}
-                    />
-                    <YAxis
-                        type="number"
-                        dataKey="ppg"
-                        name="Points Per Game"
-                        stroke="#4b0082"
-                        label={{ value: 'Points Per Game', angle: -90, position: 'insideLeft' }}
-                    />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Scatter name="Players" data={data} fill="#4b0082" />
-                </ScatterChart>
-            </ResponsiveContainer>
+            <h2 style={{ marginTop: 2, fontSize: '1.1rem' }}className="text-2xl font-bold mb-4">{selectedTeam} Player Efficiency</h2>
+            {loading ? (
+                <div>Loading player data...</div>
+            ) : (
+                <ResponsiveContainer width="100%" height={250}>
+                    <ScatterChart>
+                        <CartesianGrid />
+                        <XAxis
+                            type="number"
+                            dataKey="mpg"
+                            name="Minutes Per Game"
+                            stroke="#4b0082"
+                            label={{ value: 'Minutes Per Game', position: 'inside', offset: 10 }}
+                        />
+                        <YAxis
+                            type="number"
+                            dataKey="ppg"
+                            name="Points Per Game"
+                            stroke="#4b0082"
+                            label={{ value: 'Points Per Game', angle: -90, position: 'inside', offset: 0 }}
+                        />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Scatter name="Players" data={data} fill="#4b0082" />
+                    </ScatterChart>
+                </ResponsiveContainer>
+            )}
         </div>
     );
 }

@@ -175,7 +175,7 @@ function Chatbot({ onRelevantTeams }) {
             <div
                 style={{
                     flex: 1,
-                    maxHeight: 450,
+                    maxHeight: 600,
                     overflowY: "auto",
                     padding: "10px",
                     backgroundColor: "#ffffff",
@@ -241,4 +241,4 @@ function Chatbot({ onRelevantTeams }) {
     );
 }
 
-export default Chatbot;
+export default React.memo(Chatbot);

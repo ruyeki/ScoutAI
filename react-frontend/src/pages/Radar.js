@@ -52,31 +52,46 @@ const RadarComparisonChart = ({ team1, team2, onTeamChange }) => {
         : [];
 
     return (
-        <div style={{ width: '100%', height: 320 }}>
-            <h2 style={{ fontSize: '1.1rem', marginBottom: 10 }}>Radar Chart Comparison</h2>
-            <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
-                <select value={team1} onChange={e => onTeamChange(0, e.target.value)}>
-                    {TEAMS.map(team => (
-                        <option key={team} value={team}>{team}</option>
-                    ))}
-                </select>
-                <span style={{ alignSelf: 'center' }}>vs</span>
-                <select value={team2} onChange={e => onTeamChange(1, e.target.value)}>
-                    {TEAMS.map(team => (
-                        <option key={team} value={team}>{team}</option>
-                    ))}
-                </select>
+        <div style={{ width: '100%', height: 300, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+            <h2 style={{ fontSize: '1.1rem', marginTop: 2, marginBottom: 10 }}>Team Comparison</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10, alignItems: 'flex-start', marginLeft: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <label htmlFor="team1-select" style={{ fontSize: '0.85rem', marginRight: 4, color: '#8884d8', fontWeight: 500 }}>Team 1:</label>
+                    <select 
+                        id="team1-select"
+                        value={team1} 
+                        onChange={e => onTeamChange(0, e.target.value)}
+                        style={{ fontSize: '0.85rem', padding: '2px 6px', borderRadius: 5, border: '1.1px solid #8884d8', minWidth: 70, marginBottom: 2 }}
+                    >
+                        {TEAMS.map(team => (
+                            <option key={team} value={team}>{team}</option>
+                        ))}
+                    </select>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <label htmlFor="team2-select" style={{ fontSize: '0.85rem', marginRight: 4, color: '#82ca9d', fontWeight: 500 }}>Team 2:</label>
+                    <select 
+                        id="team2-select"
+                        value={team2} 
+                        onChange={e => onTeamChange(1, e.target.value)}
+                        style={{ fontSize: '0.85rem', padding: '2px 6px', borderRadius: 5, border: '1.1px solid #82ca9d', minWidth: 70, marginTop: 2 }}
+                    >
+                        {TEAMS.map(team => (
+                            <option key={team} value={team}>{team}</option>
+                        ))}
+                    </select>
+                </div>
             </div>
             {!team1Stats || !team2Stats ? (
                 <p>Loading radar chart...</p>
             ) : (
-                <ResponsiveContainer width="100%" height={250}>
-                    <RadarChart cx="50%" cy="50%" outerRadius="80%" data={chartData}>
+                <ResponsiveContainer width="100%" height={220}>
+                    <RadarChart cx="48%" cy="50%" outerRadius="80%" data={chartData}>
                         <PolarGrid />
                         <PolarAngleAxis dataKey="stat" />
                         <PolarRadiusAxis angle={30} domain={[0, 100]} />
-                        <Radar name={team1} dataKey={team1} stroke="#8884d8" fill="#8884d8" fillOpacity={0.6} isAnimationActive={true} animationDuration={800} />
-                        <Radar name={team2} dataKey={team2} stroke="#82ca9d" fill="#82ca9d" fillOpacity={0.4} isAnimationActive={true} animationDuration={800} />
+                        <Radar name={team1} dataKey={team1} stroke="#8884d8" fill="#8884d8" fillOpacity={0.6} isAnimationActive={true} animationDuration={800} dot={{ r: 4, stroke: '#8884d8', fill: '#fff', strokeWidth: 2 }} />
+                        <Radar name={team2} dataKey={team2} stroke="#82ca9d" fill="#82ca9d" fillOpacity={0.4} isAnimationActive={true} animationDuration={800} dot={{ r: 4, stroke: '#82ca9d', fill: '#fff', strokeWidth: 2 }} />
                         <Legend />
                     </RadarChart>
                 </ResponsiveContainer>

@@ -27,8 +27,7 @@ llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0.7)
 # print(db.get_usable_table_names())
 # db.run("SELECT * FROM Artist LIMIT 10;")
 
-base_dir = os.path.abspath(os.path.dirname(__file__))
-db_path = os.path.join(base_dir, "ucd-basketball.db")
+db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ucd-basketball.db"))
 db_uri = f"sqlite:///{db_path}"
 
 # Use it to initialize SQLDatabase

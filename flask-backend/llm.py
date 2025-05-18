@@ -161,8 +161,7 @@ class Chatbot:
         #self.db = SQLDatabase.from_uri(db_uri)
 
         #NEW SQLITE DATABASE CONNECTION
-        base_dir = os.path.abspath(os.path.dirname(__file__))
-        db_path = os.path.join(base_dir, "ucd-basketball.db")
+        db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ucd-basketball.db"))
         db_uri = f"sqlite:///{db_path}"
         self.db = SQLDatabase.from_uri(db_uri)
         

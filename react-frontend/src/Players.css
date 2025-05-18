@@ -129,8 +129,9 @@ button:hover {
 
 .dashboard-container {
     display: flex;
+    align-items: flex-start;
     gap: 20px;
-    padding: 20px;
+    padding: 0 20px;
     background-color: #fdfdfd; /* Light background */
 }
 
