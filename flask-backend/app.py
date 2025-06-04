@@ -22,6 +22,10 @@ app.register_blueprint(player_bp)
 app.register_blueprint(chart_bp)
 app.register_blueprint(radar_chart_bp)
 
+@app.route('/')
+def index():
+    return 'Backend is up and running! 🚀'
+
 
 
 if __name__ == "__main__":
